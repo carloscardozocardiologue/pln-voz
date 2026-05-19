@@ -19,7 +19,7 @@ from huggingface_hub import InferenceClient
 
 load_dotenv()
 
-_DATA_PATH    = Path(__file__).parent.parent / "data" / "dataset_cardio_1000.csv"
+_DATA_PATH    = Path(__file__).parent.parent / "data" / "preguntas_cardiologia_esc_500.csv"
 _QA_MODEL     = "mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es"
 _TFIDF_UMBRAL      = 0.15   # mínimo para intentar responder
 _TFIDF_BERT_UMBRAL = 0.30   # mínimo para usar BERT (retrieval suficientemente confiable)

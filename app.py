@@ -16,7 +16,7 @@ from src.db import (
     obtener_estadisticas, obtener_baja_confianza,
 )
 
-_DATA_PATH = Path(__file__).parent / "data" / "dataset_cardio_1000.csv"
+_DATA_PATH = Path(__file__).parent / "data" / "preguntas_cardiologia_esc_500.csv"
 
 _LOGO_PATH = Path(__file__).parent / "assets" / "UE_Madrid_Logo_Positive_RGB.png"
 _LOGO_B64  = (
