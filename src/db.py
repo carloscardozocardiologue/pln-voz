@@ -14,6 +14,7 @@ def _conectar():
         user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASSWORD"),
         database=os.getenv("DB_NAME"),
+        connection_timeout=3,
     )
 
 
@@ -29,6 +30,65 @@ def guardar(categoria: str, transcripcion: str, respuesta: str,
     conn.commit()
     cursor.close()
     conn.close()
+
+
+def borrar_historial():
+    conn = _conectar()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM consultas")
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+
+def obtener_estadisticas() -> dict:
+    conn = _conectar()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT
+            COUNT(*)                                              AS total,
+            ROUND(AVG(confianza), 3)                             AS confianza_media,
+            SUM(confianza < 0.40)                                AS baja_confianza,
+            ROUND(AVG(duracion_ms))                              AS tiempo_medio_ms
+        FROM consultas
+    """)
+    resumen = cursor.fetchone()
+
+    cursor.execute("""
+        SELECT
+            categoria,
+            COUNT(*)                    AS consultas,
+            ROUND(AVG(confianza), 3)    AS confianza_media,
+            ROUND(AVG(duracion_ms))     AS tiempo_medio_ms
+        FROM consultas
+        GROUP BY categoria
+        ORDER BY consultas DESC
+    """)
+    por_categoria = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+    return {"resumen": resumen, "por_categoria": por_categoria}
+
+
+def obtener_baja_confianza(umbral: float = 0.40, limite: int = 10) -> list[dict]:
+    conn = _conectar()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT categoria, transcripcion, confianza
+        FROM consultas
+        WHERE confianza < %s
+        ORDER BY confianza ASC, fecha_hora DESC
+        LIMIT %s
+        """,
+        (umbral, limite),
+    )
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rows
 
 
 def obtener_historial(limite: int = 20) -> list[dict]:
