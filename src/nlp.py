@@ -22,9 +22,10 @@ load_dotenv()
 
 _DATA_PATH    = Path(__file__).parent.parent / "data" / "preguntas_cardiologia_esc_500.csv"
 _QA_MODEL     = "mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es"
-_TFIDF_UMBRAL      = 0.15   # mínimo para intentar responder
-_TFIDF_BERT_UMBRAL = 0.30   # mínimo para usar BERT (retrieval suficientemente confiable)
-_BERT_UMBRAL       = 0.15   # confianza mínima del modelo BERT
+_TFIDF_UMBRAL        = 0.15   # mínimo para intentar responder
+_TFIDF_BERT_UMBRAL   = 0.30   # mínimo para usar BERT
+_BERT_UMBRAL         = 0.15   # confianza mínima del modelo BERT
+_TFIDF_PREGUNTA_MIN  = 0.35   # si pregunta-sola supera esto, no hace falta buscar en contexto
 _TOP_K        = 2
 
 
@@ -42,11 +43,19 @@ def _normalizar(texto: str) -> str:
 
 
 def _cargar():
-    df  = pd.read_csv(_DATA_PATH)
-    vec = TfidfVectorizer(ngram_range=(1, 2))
-    texto = (df["pregunta"] + " " + df["contexto"].fillna("")).apply(_normalizar)
-    mat = vec.fit_transform(texto)
-    return df, vec, mat
+    df = pd.read_csv(_DATA_PATH)
+
+    # Matriz 1: solo pregunta — alta similitud para preguntas exactas o casi exactas
+    vec_p = TfidfVectorizer(ngram_range=(1, 2))
+    mat_p = vec_p.fit_transform(df["pregunta"].apply(_normalizar))
+
+    # Matriz 2: pregunta + contexto — fallback para keywords que solo aparecen en el contexto
+    vec_pc = TfidfVectorizer(ngram_range=(1, 2))
+    mat_pc = vec_pc.fit_transform(
+        (df["pregunta"] + " " + df["contexto"].fillna("")).apply(_normalizar)
+    )
+
+    return df, vec_p, mat_p, vec_pc, mat_pc
 
 
 def _get_hf_token() -> str:
@@ -60,7 +69,7 @@ def _get_hf_token() -> str:
     return os.getenv("HF_TOKEN", "")
 
 
-_df, _vectorizador, _matriz = _cargar()
+_df, _vec_p, _mat_p, _vec_pc, _mat_pc = _cargar()
 
 FALLBACK = (
     "No tengo información suficiente en mi base de conocimiento para responder "
@@ -69,9 +78,9 @@ FALLBACK = (
 
 
 def recargar():
-    """Reconstruye el índice TF-IDF después de añadir entradas al dataset."""
-    global _df, _vectorizador, _matriz
-    _df, _vectorizador, _matriz = _cargar()
+    """Reconstruye los índices TF-IDF después de añadir entradas al dataset."""
+    global _df, _vec_p, _mat_p, _vec_pc, _mat_pc
+    _df, _vec_p, _mat_p, _vec_pc, _mat_pc = _cargar()
 
 
 def responder(pregunta: str) -> dict:
@@ -85,11 +94,31 @@ def responder(pregunta: str) -> dict:
       4. Si BERT no supera el umbral, se usa la respuesta pre-escrita del dataset.
       5. Si TF-IDF tampoco supera su umbral, se devuelve el mensaje de fallback.
     """
-    # — Etapa 1: TF-IDF retrieval —
-    vec_pregunta = _vectorizador.transform([_normalizar(pregunta)])
-    similitudes  = cosine_similarity(vec_pregunta, _matriz).flatten()
-    top_indices  = similitudes.argsort()[::-1][:_TOP_K]
-    confianza_tfidf = float(similitudes[top_indices[0]])
+    # — Etapa 1: TF-IDF retrieval (dos matrices) —
+    q_norm  = _normalizar(pregunta)
+
+    # Primero: solo pregunta — da scores altos para coincidencias directas
+    sim_p   = cosine_similarity(_vec_p.transform([q_norm]), _mat_p).flatten()
+    top_p   = sim_p.argsort()[::-1][:_TOP_K]
+    score_p = float(sim_p[top_p[0]])
+
+    # Si la pregunta-sola no supera el umbral, buscar también en pregunta+contexto
+    if score_p < _TFIDF_PREGUNTA_MIN:
+        sim_pc   = cosine_similarity(_vec_pc.transform([q_norm]), _mat_pc).flatten()
+        top_pc   = sim_pc.argsort()[::-1][:_TOP_K]
+        score_pc = float(sim_pc[top_pc[0]])
+        if score_pc > score_p:
+            top_indices     = top_pc
+            sim_activa      = sim_pc
+            confianza_tfidf = score_pc
+        else:
+            top_indices     = top_p
+            sim_activa      = sim_p
+            confianza_tfidf = score_p
+    else:
+        top_indices     = top_p
+        sim_activa      = sim_p
+        confianza_tfidf = score_p
 
     if confianza_tfidf < _TFIDF_UMBRAL:
         return {"respuesta": FALLBACK, "confianza": round(confianza_tfidf, 3), "categoria": "Sin categoría"}
@@ -102,7 +131,7 @@ def responder(pregunta: str) -> dict:
     if confianza_tfidf >= _TFIDF_BERT_UMBRAL:
         bert_estado = "error_api"
         for idx in top_indices:
-            if similitudes[idx] < _TFIDF_UMBRAL:
+            if sim_activa[idx] < _TFIDF_UMBRAL:
                 break
             contexto = _df.iloc[idx]["contexto"]
             try:
