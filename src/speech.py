@@ -10,6 +10,8 @@ _CORRECCIONES = {
     "david galan":          "dabigatrán",
     "david galán":          "dabigatrán",
     "david gatran":         "dabigatrán",
+    "david catran":         "dabigatrán",
+    "david katran":         "dabigatrán",
     "davigatran":           "dabigatrán",
     "dabiga tran":          "dabigatrán",
     "rival oxaban":         "rivaroxabán",
