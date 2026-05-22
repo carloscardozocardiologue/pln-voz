@@ -100,15 +100,15 @@ with tab_asistente:
     audio = st.audio_input("Pulsa el micrófono, habla y pulsa detener", key=f"audio_{_k}")
 
     st.write("— o escribe tu consulta —")
-    texto_escrito = st.text_input(
-        "Consulta escrita",
-        placeholder="¿Cuáles son los síntomas del infarto?",
-        label_visibility="collapsed",
-        key=f"texto_{_k}",
-    )
-    col_btn, col_nueva = st.columns(2)
-    consultar = col_btn.button("Consultar", use_container_width=True, type="primary")
-    if col_nueva.button("Nueva consulta", use_container_width=True, type="secondary"):
+    with st.form(key=f"form_{_k}", clear_on_submit=False):
+        texto_escrito = st.text_input(
+            "Consulta escrita",
+            placeholder="¿Cuáles son los síntomas del infarto?",
+            label_visibility="collapsed",
+        )
+        consultar = st.form_submit_button("Consultar", use_container_width=True, type="primary")
+
+    if st.button("Nueva consulta", use_container_width=True, type="secondary"):
         st.session_state["ultima_consulta"] = None
         st.session_state["input_key"] = _k + 1
         st.rerun()
