@@ -24,6 +24,7 @@ for _, fila in df_rev.iterrows():
     if not mask.any():
         print(f"  AVISO: id {fila['id']} no encontrado en el dataset principal.")
         continue
+    df_main.loc[mask, "pregunta"]  = fila["pregunta"]
     df_main.loc[mask, "respuesta"] = fila["respuesta"]
     df_main.loc[mask, "contexto"]  = fila["contexto"]
     actualizados += 1
