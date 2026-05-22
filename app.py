@@ -179,17 +179,20 @@ with tab_asistente:
         st.markdown(f"**Asistente:** {respuesta}")
         st.write("")
 
-        color = "green" if confianza >= 0.7 else "orange" if confianza >= 0.4 else "red"
+        # Cuando BERT tuvo éxito, su score es más representativo que el TF-IDF
+        confianza_display = score_bert if bert_usado else confianza
+        fuente_confianza  = "BERT" if bert_usado else "TF-IDF"
+        color = "green" if confianza_display >= 0.7 else "orange" if confianza_display >= 0.4 else "red"
         col_conf, col_mejorar = st.columns([5, 1])
         with col_conf:
             st.markdown(
-                f"Confianza de la respuesta: "
-                f"<span style='color:{color}; font-weight:bold'>{confianza:.0%}</span>",
+                f"Confianza de la respuesta ({fuente_confianza}): "
+                f"<span style='color:{color}; font-weight:bold'>{confianza_display:.0%}</span>",
                 unsafe_allow_html=True,
             )
-            st.progress(confianza)
+            st.progress(confianza_display)
         with col_mejorar:
-            if confianza < 0.85:
+            if confianza_display < 0.85:
                 st.write("")
                 if st.button("Mejorar", type="secondary", use_container_width=True):
                     dialog_mejorar(pregunta, categoria)
