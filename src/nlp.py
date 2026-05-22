@@ -44,7 +44,8 @@ def _normalizar(texto: str) -> str:
 def _cargar():
     df  = pd.read_csv(_DATA_PATH)
     vec = TfidfVectorizer(ngram_range=(1, 2))
-    mat = vec.fit_transform(df["pregunta"].apply(_normalizar))
+    texto = (df["pregunta"] + " " + df["contexto"].fillna("")).apply(_normalizar)
+    mat = vec.fit_transform(texto)
     return df, vec, mat
 
 
