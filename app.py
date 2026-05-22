@@ -121,10 +121,12 @@ with tab_asistente:
 
     # Determinar fuente de la consulta
     transcripcion = None
+    fuente_input  = "texto"
     if audio:
         with st.spinner("Transcribiendo audio..."):
             try:
                 transcripcion = transcribir(audio.read())
+                fuente_input  = "voz"
             except Exception as e:
                 st.error(f"Error en la transcripción: {e}")
                 st.stop()
@@ -146,6 +148,7 @@ with tab_asistente:
             "transcripcion": transcripcion,
             "resultado":     resultado,
             "duracion_ms":   duracion_ms,
+            "fuente":        fuente_input,
         }
         st.session_state["input_key"] = _k + 1
         try:
@@ -175,7 +178,8 @@ with tab_asistente:
             unsafe_allow_html=True,
         )
         st.divider()
-        st.caption(f"Categoría detectada: {categoria}")
+        fuente_label = "🎙️ Entrada por voz" if uc.get("fuente") == "voz" else "⌨️ Entrada por texto"
+        st.caption(f"{fuente_label} · Categoría detectada: {categoria}")
         st.markdown(f"**Asistente:** {respuesta}")
         st.write("")
 
