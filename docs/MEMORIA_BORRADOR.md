@@ -52,11 +52,11 @@
 
 | Tarea | Prioridad | Descripción |
 |---|---|---|
-| Prueba con voz real | 🔴 Crítica | Realizar mínimo 10 consultas por voz y documentar resultados |
-| Capturas de pantalla | 🔴 Crítica | Cada pestaña, ejemplos de respuesta alta/baja confianza |
-| Despliegue Streamlit Cloud | 🔴 Crítica | URL pública para el profesor |
+| Prueba con voz real | 🔴 Crítica | Realizar mínimo 10 consultas por voz y documentar resultados en sección 7.1–7.2 |
+| Capturas de pantalla | 🔴 Crítica | Cada pestaña, ejemplos alta/baja confianza, MySQL Railway (sección 7.3) |
+| Reflexión personal | 🟡 Alta | 3–4 líneas propias en la sección de conclusiones |
 | Hacer repo GitHub público | 🟡 Alta | Regenerar HF_TOKEN antes (está expuesto en el historial del chat) |
-| Tabla de resultados de prueba | 🔴 Crítica | Ver sección 7 de este documento |
+| Conversión a Word/pptx | 🔴 Crítica | Formato UEM con logo institucional, entregar como PDF en Campus Virtual |
 
 ### Discrepancias que corregir en el documento final
 
@@ -159,11 +159,12 @@ IDF(t)   = log( N / df(t) )
                  df(t) = documentos que contienen t
 ```
 
-**Implementación concreta:**
-- Se vectorizan las preguntas del dataset (`preguntas_cardiologia_esc_500.csv`, 500 entradas)
-- Se usa `TfidfVectorizer(ngram_range=(1,2))`: además de palabras individuales, se tratan como unidades los bigramas ("infarto agudo", "fibrilación auricular"), mejorando la precisión en terminología médica compuesta
-- Normalización previa: minúsculas y eliminación de tildes (para que "síntoma" y "sintoma" sean el mismo token)
-- La pregunta del médico se vectoriza con el mismo vectorizador y se compara con la matriz mediante similitud coseno
+**Implementación concreta — doble índice TF-IDF:**
+- Se construyen **dos matrices** con `TfidfVectorizer(ngram_range=(1,2))`:
+  - **Índice 1 (pregunta sola):** vectoriza únicamente el campo `pregunta` de cada entrada. Para coincidencias directas (la pregunta del médico es prácticamente idéntica a una del dataset), este índice produce scores cercanos al 100%, reflejando fielmente la alta fiabilidad de la respuesta.
+  - **Índice 2 (pregunta + contexto):** vectoriza la concatenación de `pregunta` y `contexto`. Se usa como fallback cuando el score del índice 1 es < 35%, permitiendo encontrar entradas relevantes cuando el médico usa vocabulario que aparece solo en el contexto clínico (ej. "hypoperfusion" → "hipoperfusión").
+- Normalización previa: minúsculas, eliminación de tildes y conversión de prefijos médicos inglés/francés al español (`hypo→hipo`, `hyper→hiper`, `thrombo→trombo`), garantizando que "hypoperfusion" y "hipoperfusión" sean el mismo token
+- La pregunta del médico se vectoriza y compara mediante similitud coseno; el score resultante es el que se muestra en la interfaz como "confianza TF-IDF"
 
 **Umbral de confianza TF-IDF:**
 - `< 0.15` → respuesta de fallback ("no tengo información suficiente")
@@ -358,7 +359,7 @@ La aplicación está organizada en cuatro pestañas:
 
 ### Pestaña 1 — Asistente (flujo principal)
 
-1. El médico graba su consulta con `st.audio_input()` o la escribe directamente
+1. El médico graba su consulta con `st.audio_input()` **o** la escribe directamente en el campo de texto (pulsando **Enter** o el botón "Consultar")
 2. El audio se transcribe (Google Speech Recognition) — se muestra el texto
 3. El texto pasa por el pipeline NLP (TF-IDF → BERT QA) — se muestra la respuesta
 4. Una barra de progreso con código de color indica la confianza:

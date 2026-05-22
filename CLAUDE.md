@@ -4,17 +4,17 @@
 
 Actividad académica de la asignatura PLN (Procesamiento de Lenguaje Natural), Unidad 4, Máster de IA en Ciencias de la Salud — Universidad Europea de Madrid.
 
-El sistema captura peticiones de voz de médicos en un entorno hospitalario cardiológico, las transcribe con Whisper, las procesa con un modelo QA en español (HuggingFace) y almacena las consultas y respuestas en una base de datos MySQL remota (Railway).
+El sistema captura peticiones de voz de médicos en un entorno hospitalario cardiológico, las transcribe con Google Speech Recognition, las procesa con TF-IDF + BERT QA en español (HuggingFace) y almacena las consultas y respuestas en una base de datos MySQL remota (Railway).
 
 **Código de actividad:** 0MSR001107_UA4_AA1  
-**Producción:** Streamlit Cloud (URL pública para el profesor)
+**Producción:** Streamlit Cloud — repo `carloscardozocardiologue/pln-voz`
 
 ## Filosofía y producto final
 
 **Principio fundamental:** el sistema debe funcionar con audio real de micrófono — no basta con texto sintético como entrada.
 
 Lo que produce el sistema:
-- Aplicación Streamlit con grabación de voz, transcripción automática, respuesta médica y historial
+- Aplicación Streamlit con grabación de voz, transcripción automática, respuesta médica e historial
 - Base de datos MySQL remota (Railway) con consultas almacenadas
 - Documentación del proceso (pptx o Word): contexto, metodología, herramientas, análisis de resultados, conclusiones y referencias al estado del arte
 
@@ -24,31 +24,37 @@ Lo que produce el sistema:
 Navegador del médico
         │
         ▼
-   st.audio_input()              ← graba desde el navegador
-        │ audio bytes
+   st.audio_input()  ←  graba desde el navegador
+        │ audio bytes (WebM)
         ▼
-HF API — openai/whisper-large-v3
-        │ texto transcrito (es-ES)
-        ▼
-HF API — BERT QA español         ← extrae respuesta del contexto cardiológico
-        │ respuesta + score de confianza
-        ▼
-MySQL Railway                    ← guarda todo con timestamp
+pydub — conversión WebM → WAV
         │
         ▼
-Streamlit — transcripción + respuesta + barra de confianza + historial
+Google Speech Recognition (es-ES)   ← src/speech.py + diccionario ~50 correcciones fonéticas
+        │ texto transcrito
+        ▼
+TF-IDF (doble índice: pregunta / pregunta+contexto)   ← src/nlp.py
+        │ top-2 entradas del dataset + score de similitud
+        ▼
+BERT QA español (mrm8488/...)        ← HF Inference API, solo si TF-IDF ≥ 30%
+        │ fragmento extraído del contexto (si score BERT > score TF-IDF)
+        ▼
+MySQL Railway                        ← src/db.py
+        │
+        ▼
+Streamlit — respuesta + confianza + historial + estadísticas
 ```
 
 ## Servicios — referencia rápida
 
-| Componente         | Tecnología                                               | Archivo                    | Función                               |
-|--------------------|----------------------------------------------------------|----------------------------|---------------------------------------|
-| Interfaz           | Streamlit ≥ 1.32                                         | `app.py`                   | UI completa con grabación e historial |
-| Transcripción voz  | HF API — `openai/whisper-large-v3`                       | `src/speech.py`            | Audio bytes → texto en español        |
-| Procesamiento PLN  | HF API — `mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es` | `src/nlp.py` | Pregunta → respuesta médica + confianza |
-| Contexto médico    | Texto cardiológico por categoría                         | `src/contexto_cardio.py`   | Base de conocimiento para el modelo QA |
-| Persistencia       | mysql-connector-python                                   | `src/db.py`                | Guarda y recupera consultas en MySQL  |
-| Base de datos      | MySQL 9.4 en Railway                                     | `sql/schema.sql`           | Tabla `consultas`                     |
+| Componente        | Tecnología                                                             | Archivo         | Función                                    |
+|-------------------|------------------------------------------------------------------------|-----------------|--------------------------------------------|
+| Interfaz          | Streamlit ≥ 1.32                                                       | `app.py`        | UI completa: grabación, texto, historial   |
+| Transcripción voz | `speech_recognition` + `pydub` (Google SR es-ES)                      | `src/speech.py` | Audio bytes → texto + correcciones fonéticas |
+| Procesamiento PLN | TF-IDF (scikit-learn) + BERT QA (HF API)                              | `src/nlp.py`    | Pregunta → respuesta médica + confianza    |
+| Dataset           | CSV 500 entradas cardiología (pregunta / respuesta / contexto)         | `data/preguntas_cardiologia_esc_500.csv` | Base de conocimiento |
+| Persistencia      | mysql-connector-python                                                 | `src/db.py`     | Guarda y recupera consultas en MySQL       |
+| Base de datos     | MySQL 9.4 en Railway                                                   | `sql/schema.sql`| Tabla `consultas`                          |
 
 ## Comandos
 
@@ -70,7 +76,7 @@ mysql -h <DB_HOST> -P <DB_PORT> -u root -p railway -e "SELECT * FROM consultas L
 
 | Variable      | Uso                                              |
 |---------------|--------------------------------------------------|
-| `HF_TOKEN`    | Token de HuggingFace Inference API               |
+| `HF_TOKEN`    | Token de HuggingFace Inference API (BERT QA)     |
 | `DB_HOST`     | Host MySQL Railway (proxy público)               |
 | `DB_PORT`     | Puerto público Railway (≠ 3306 interno)          |
 | `DB_USER`     | Usuario MySQL (root)                             |
@@ -79,37 +85,54 @@ mysql -h <DB_HOST> -P <DB_PORT> -u root -p railway -e "SELECT * FROM consultas L
 
 Copia `.env.example` a `.env` y rellena los valores. El `.env` nunca se sube a git.
 
-## Comportamientos clave
+## Comportamientos clave del pipeline NLP
 
-- Las categorías de consulta son: **Síntomas**, **Medicamentos**, **Protocolos** (cardiología).
-- El modelo QA extrae la respuesta del contexto cardiológico definido en `src/contexto_cardio.py`.
-- La confianza del modelo se muestra como barra de progreso con código de color (verde ≥ 70%, naranja ≥ 40%, rojo < 40%).
+- **Doble índice TF-IDF:** matriz 1 sobre `pregunta` sola (scores altos para coincidencias exactas); matriz 2 sobre `pregunta+contexto` como fallback cuando el score de la primera es < 35%. Esto evita que un coincidencia exacta puntúe 49% en vez de ~100%.
+- **Arbitraje BERT vs. TF-IDF:** BERT extrae un fragmento del `contexto` y solo sustituye la respuesta pre-escrita si su score supera al score TF-IDF. Con coincidencia exacta (TF-IDF 100%), la respuesta pre-escrita siempre gana.
+- **BERT es extractivo, no generativo:** no redacta respuestas nuevas — cita fragmentos literales del contexto. Esto garantiza trazabilidad clínica pero no produce respuestas más completas que las pre-escritas.
+- **Confianza mostrada:** cuando BERT gana, la barra muestra su score; si gana TF-IDF, muestra el score TF-IDF.
+- Las categorías de consulta son: **Síntomas**, **Medicamentos**, **Protocolos**.
 - El historial muestra las últimas 20 consultas y permite exportar a CSV.
-- La red del hospital bloquea el puerto de Railway — usar hotspot o red doméstica para desarrollo.
+- La red del hospital puede bloquear el puerto de Railway — usar hotspot o red doméstica si hay problemas de conexión.
+
+## Comportamientos clave de la UI
+
+- El campo de texto acepta **Enter** para lanzar la consulta (sin necesidad de hacer clic en "Consultar").
+- El botón "Nueva consulta" limpia los inputs y refresca la pantalla.
+- El botón "Mejorar" aparece cuando la confianza es < 85% y permite añadir una entrada al dataset en tiempo real.
+- El índice TF-IDF se reconstruye automáticamente tras añadir una entrada (sin reiniciar la app).
 
 ## Estado actual del proyecto (mayo 2026)
 
-**Fase:** implementación completa — pipeline funcional en local, pendiente de prueba con voz real y despliegue en Streamlit Cloud.
+**Fase:** implementación completa y desplegada en producción. Pendiente únicamente la documentación final.
 
 **Completado:**
-- Arquitectura definida y código implementado
-- Railway MySQL conectado y tabla `consultas` creada
-- Pipeline transcripción → PLN → DB probado con datos de prueba
-- Streamlit corriendo en local (http://localhost:8501)
+- Pipeline completo funcional: voz → Google SR → TF-IDF (doble índice) → BERT QA → MySQL Railway
+- App Streamlit Cloud desplegada y pública
+- MySQL Railway conectado y operativo
+- Dataset 500 entradas cardiología (IDs 1–500), 3 categorías
+- Correcciones fonéticas (~50 términos cardiológicos) en `src/speech.py`
+- Lógica de arbitraje BERT vs. TF-IDF (el score más alto gana)
+- Enter en campo de texto lanza la consulta directamente
+- Memoria borrador completa en `docs/MEMORIA_BORRADOR.md`
 
-**Pendiente:**
-- Prueba con voz real desde el navegador
-- Despliegue en Streamlit Cloud
-- Hacer el repo público en GitHub
-- Crear `Actividad3.md` con documentación para la memoria
+**Pendiente para la entrega:**
+- Pruebas con voz real (mínimo 10 consultas) y rellenar sección 7.1–7.2 de la memoria
+- Capturas de pantalla de cada pestaña + MySQL Railway (sección 7.3)
+- Reflexión personal en conclusiones (3–4 líneas propias)
+- Convertir `MEMORIA_BORRADOR.md` a Word o pptx con formato UEM
+- Regenerar HF_TOKEN antes de hacer el repo público
 
 ## Stack técnico
 
 - Python 3.9
 - `streamlit` ≥ 1.32 — interfaz web con grabación de audio
-- `huggingface_hub` — cliente para Whisper y BERT QA vía Inference API
+- `speech_recognition` ≥ 3.10 — Google Speech Recognition
+- `pydub` ≥ 0.25 — conversión WebM → WAV (requiere `ffmpeg` en el sistema)
+- `scikit-learn` ≥ 1.3 — TF-IDF y similitud coseno
+- `huggingface_hub` ≥ 0.23 — cliente BERT QA vía Inference API
 - `mysql-connector-python` — conexión a MySQL
-- `pandas` — manejo del historial en tabla
+- `pandas` — manejo del dataset e historial
 - `python-dotenv` — gestión de variables de entorno
 - MySQL 9.4 en Railway — base de datos relacional remota
 
@@ -125,4 +148,4 @@ Copia `.env.example` a `.env` y rellena los valores. El `.env` nunca se sube a g
 - La documentación final va en formato pptx o Word e incluye obligatoriamente referencias al estado del arte.
 - No hardcodear respuestas médicas concretas — solo mejoras algorítmicas reales.
 - Este es un proyecto académico: priorizar claridad y simplicidad sobre optimización prematura.
-- El HF_TOKEN está en el chat — regenerarlo en HuggingFace antes de hacer el repo público.
+- El HF_TOKEN debe regenerarse en HuggingFace antes de hacer el repo público (el token anterior quedó expuesto en el historial del chat).
