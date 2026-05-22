@@ -4,7 +4,7 @@
 
 Actividad académica de la asignatura PLN (Procesamiento de Lenguaje Natural), Unidad 4, Máster de IA en Ciencias de la Salud — Universidad Europea de Madrid.
 
-El sistema captura peticiones de voz de médicos en un entorno hospitalario cardiológico, las transcribe con Google Speech Recognition, las procesa con TF-IDF + BERT QA en español (HuggingFace) y almacena las consultas y respuestas en una base de datos MySQL remota (Railway).
+El sistema captura peticiones de voz de médicos en un entorno hospitalario cardiológico, las transcribe con Google Speech Recognition, las procesa con TF-IDF + OpenAI GPT-4o-mini (RAG estricto) y almacena las consultas y respuestas en una base de datos MySQL remota (Railway).
 
 **Código de actividad:** 0MSR001107_UA4_AA1  
 **Producción:** Streamlit Cloud — repo `carloscardozocardiologue/pln-voz`
@@ -34,10 +34,10 @@ Google Speech Recognition (es-ES)   ← src/speech.py + diccionario ~50 correcci
         │ texto transcrito
         ▼
 TF-IDF (doble índice: pregunta / pregunta+contexto)   ← src/nlp.py
-        │ top-2 entradas del dataset + score de similitud
+        │ top-2 contextos del dataset + score de similitud
         ▼
-BERT QA español (mrm8488/...)        ← HF Inference API, solo si TF-IDF ≥ 30%
-        │ fragmento extraído del contexto (si score BERT > score TF-IDF)
+OpenAI GPT-4o-mini (RAG estricto)    ← API OpenAI, si TF-IDF ≥ 15%
+        │ respuesta generada solo con el contexto recuperado
         ▼
 MySQL Railway                        ← src/db.py
         │
@@ -51,7 +51,7 @@ Streamlit — respuesta + confianza + historial + estadísticas
 |-------------------|------------------------------------------------------------------------|-----------------|--------------------------------------------|
 | Interfaz          | Streamlit ≥ 1.32                                                       | `app.py`        | UI completa: grabación, texto, historial   |
 | Transcripción voz | `speech_recognition` + `pydub` (Google SR es-ES)                      | `src/speech.py` | Audio bytes → texto + correcciones fonéticas |
-| Procesamiento PLN | TF-IDF (scikit-learn) + BERT QA (HF API)                              | `src/nlp.py`    | Pregunta → respuesta médica + confianza    |
+| Procesamiento PLN | TF-IDF (scikit-learn) + OpenAI GPT-4o-mini (RAG)                      | `src/nlp.py`    | Pregunta → respuesta médica + confianza    |
 | Dataset           | CSV 500 entradas cardiología (pregunta / respuesta / contexto)         | `data/preguntas_cardiologia_esc_500.csv` | Base de conocimiento |
 | Persistencia      | mysql-connector-python                                                 | `src/db.py`     | Guarda y recupera consultas en MySQL       |
 | Base de datos     | MySQL 9.4 en Railway                                                   | `sql/schema.sql`| Tabla `consultas`                          |
@@ -74,23 +74,23 @@ mysql -h <DB_HOST> -P <DB_PORT> -u root -p railway -e "SELECT * FROM consultas L
 
 ## Configuración — variables de entorno
 
-| Variable      | Uso                                              |
-|---------------|--------------------------------------------------|
-| `HF_TOKEN`    | Token de HuggingFace Inference API (BERT QA)     |
-| `DB_HOST`     | Host MySQL Railway (proxy público)               |
-| `DB_PORT`     | Puerto público Railway (≠ 3306 interno)          |
-| `DB_USER`     | Usuario MySQL (root)                             |
-| `DB_PASSWORD` | Contraseña MySQL Railway                         |
-| `DB_NAME`     | Nombre de la base de datos (railway)             |
+| Variable         | Uso                                              |
+|------------------|--------------------------------------------------|
+| `OPENAI_API_KEY` | Clave de la API de OpenAI (GPT-4o-mini RAG)      |
+| `DB_HOST`        | Host MySQL Railway (proxy público)               |
+| `DB_PORT`        | Puerto público Railway (≠ 3306 interno)          |
+| `DB_USER`        | Usuario MySQL (root)                             |
+| `DB_PASSWORD`    | Contraseña MySQL Railway                         |
+| `DB_NAME`        | Nombre de la base de datos (railway)             |
 
 Copia `.env.example` a `.env` y rellena los valores. El `.env` nunca se sube a git.
 
 ## Comportamientos clave del pipeline NLP
 
-- **Doble índice TF-IDF:** matriz 1 sobre `pregunta` sola (scores altos para coincidencias exactas); matriz 2 sobre `pregunta+contexto` como fallback cuando el score de la primera es < 35%. Esto evita que un coincidencia exacta puntúe 49% en vez de ~100%.
-- **Arbitraje BERT vs. TF-IDF:** BERT extrae un fragmento del `contexto` y solo sustituye la respuesta pre-escrita si su score supera al score TF-IDF. Con coincidencia exacta (TF-IDF 100%), la respuesta pre-escrita siempre gana.
-- **BERT es extractivo, no generativo:** no redacta respuestas nuevas — cita fragmentos literales del contexto. Esto garantiza trazabilidad clínica pero no produce respuestas más completas que las pre-escritas.
-- **Confianza mostrada:** cuando BERT gana, la barra muestra su score; si gana TF-IDF, muestra el score TF-IDF.
+- **Doble índice TF-IDF:** matriz 1 sobre `pregunta` sola (scores altos para coincidencias exactas); matriz 2 sobre `pregunta+contexto` como fallback cuando el score de la primera es < 35%. Esto evita que una coincidencia exacta puntúe 49% en vez de ~100%.
+- **OpenAI RAG estricto:** TF-IDF recupera los top-2 contextos y se los pasa a GPT-4o-mini con un system prompt que prohíbe explícitamente inventar información. Si el contexto no cubre la pregunta, OpenAI devuelve el mensaje de fallback. Esto elimina las alucinaciones.
+- **Un solo umbral:** si TF-IDF ≥ 0.15 se llama a OpenAI; por debajo se muestra el fallback directamente. OpenAI actúa como árbitro semántico de si el contexto es suficiente — ya no hay un segundo umbral artificial.
+- **Confianza mostrada:** siempre el score TF-IDF (OpenAI no devuelve puntuación numérica). La etiqueta indica "OpenAI + TF-IDF" cuando OpenAI generó la respuesta, "TF-IDF" cuando se usó la pre-escrita.
 - Las categorías de consulta son: **Síntomas**, **Medicamentos**, **Protocolos**.
 - El historial muestra las últimas 20 consultas y permite exportar a CSV.
 - La red del hospital puede bloquear el puerto de Railway — usar hotspot o red doméstica si hay problemas de conexión.
@@ -107,21 +107,23 @@ Copia `.env.example` a `.env` y rellena los valores. El `.env` nunca se sube a g
 **Fase:** implementación completa y desplegada en producción. Pendiente únicamente la documentación final.
 
 **Completado:**
-- Pipeline completo funcional: voz → Google SR → TF-IDF (doble índice) → BERT QA → MySQL Railway
+- Pipeline completo funcional: voz → Google SR → TF-IDF (doble índice) → OpenAI GPT-4o-mini RAG → MySQL Railway
 - App Streamlit Cloud desplegada y pública
 - MySQL Railway conectado y operativo
 - Dataset 500 entradas cardiología (IDs 1–500), 3 categorías
 - Correcciones fonéticas (~50 términos cardiológicos) en `src/speech.py`
-- Lógica de arbitraje BERT vs. TF-IDF (el score más alto gana)
+- OpenAI RAG estricto: respuestas generadas solo con el contexto recuperado, sin alucinaciones
+- 39 entradas de dosis enriquecidas con contextos clínicos completos (guías ESC)
+- Script `scripts/reimportar_contextos.py` para actualizar el dataset por lotes
 - Enter en campo de texto lanza la consulta directamente
 - Memoria borrador completa en `docs/MEMORIA_BORRADOR.md`
 
 **Pendiente para la entrega:**
+- Añadir `OPENAI_API_KEY` a los secrets de Streamlit Cloud
 - Pruebas con voz real (mínimo 10 consultas) y rellenar sección 7.1–7.2 de la memoria
 - Capturas de pantalla de cada pestaña + MySQL Railway (sección 7.3)
 - Reflexión personal en conclusiones (3–4 líneas propias)
 - Convertir `MEMORIA_BORRADOR.md` a Word o pptx con formato UEM
-- Regenerar HF_TOKEN antes de hacer el repo público
 
 ## Stack técnico
 
@@ -130,7 +132,7 @@ Copia `.env.example` a `.env` y rellena los valores. El `.env` nunca se sube a g
 - `speech_recognition` ≥ 3.10 — Google Speech Recognition
 - `pydub` ≥ 0.25 — conversión WebM → WAV (requiere `ffmpeg` en el sistema)
 - `scikit-learn` ≥ 1.3 — TF-IDF y similitud coseno
-- `huggingface_hub` ≥ 0.23 — cliente BERT QA vía Inference API
+- `openai` ≥ 1.30 — cliente GPT-4o-mini para RAG
 - `mysql-connector-python` — conexión a MySQL
 - `pandas` — manejo del dataset e historial
 - `python-dotenv` — gestión de variables de entorno

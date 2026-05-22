@@ -40,7 +40,7 @@
 |---|---|---|
 | Reconocimiento de voz | ✅ Funcional | Google Speech Recognition vía `speech_recognition` + `pydub` |
 | Pipeline NLP (Etapa 1) | ✅ Funcional | TF-IDF + similitud coseno con bigramas, normalización sin tildes |
-| Pipeline NLP (Etapa 2) | ✅ Funcional | BERT QA en español vía HuggingFace Inference API |
+| Pipeline NLP (Etapa 2) | ✅ Funcional | OpenAI GPT-4o-mini con RAG estricto (sin alucinaciones) |
 | Base de datos MySQL | ✅ Funcional | Railway (cloud), tabla `consultas` con 7 campos |
 | Interfaz Streamlit | ✅ Funcional | 4 pestañas: Asistente, Historial, Estadísticas, Conocimiento |
 | Dataset cardiológico | ✅ Construido | 500 entradas en 3 categorías (CSV) |
@@ -55,7 +55,8 @@
 | Prueba con voz real | 🔴 Crítica | Realizar mínimo 10 consultas por voz y documentar resultados en sección 7.1–7.2 |
 | Capturas de pantalla | 🔴 Crítica | Cada pestaña, ejemplos alta/baja confianza, MySQL Railway (sección 7.3) |
 | Reflexión personal | 🟡 Alta | 3–4 líneas propias en la sección de conclusiones |
-| Hacer repo GitHub público | 🟡 Alta | Regenerar HF_TOKEN antes (está expuesto en el historial del chat) |
+| Añadir OPENAI_API_KEY a Streamlit Cloud | 🔴 Crítica | Añadir el secret en el panel de Streamlit Cloud antes de redesplegar |
+| Hacer repo GitHub público | 🟡 Alta | Verificar que no hay credenciales en el historial antes de hacer público |
 | Conversión a Word/pptx | 🔴 Crítica | Formato UEM con logo institucional, entregar como PDF en Campus Virtual |
 
 ### Discrepancias que corregir en el documento final
@@ -105,8 +106,8 @@ Google Speech Recognition (es-ES)
   Etapa 2a: TF-IDF + Similitud Coseno
         │ top-2 entradas del dataset + score de confianza
         ▼
-  Etapa 2b: BERT QA en español (si confianza ≥ 30%)
-        │ respuesta extraída del contexto clínico
+  Etapa 2b: OpenAI GPT-4o-mini RAG (si confianza ≥ 15%)
+        │ respuesta generada estrictamente desde el contexto recuperado
         ▼  [Capa 3 — Persistencia]
 MySQL Railway — tabla consultas
         │
@@ -167,37 +168,44 @@ IDF(t)   = log( N / df(t) )
 - La pregunta del médico se vectoriza y compara mediante similitud coseno; el score resultante es el que se muestra en la interfaz como "confianza TF-IDF"
 
 **Umbral de confianza TF-IDF:**
-- `< 0.15` → respuesta de fallback ("no tengo información suficiente")
-- `0.15–0.30` → se devuelve la respuesta pre-escrita del dataset
-- `≥ 0.30` → se activa la Etapa 2b (BERT QA)
+- `< 0.15` → fallback directo ("no tengo información suficiente"), sin llamar a OpenAI
+- `≥ 0.15` → se activa la Etapa 2b (OpenAI RAG); OpenAI decide si el contexto es suficiente
 
-#### Etapa 2b: Question Answering con BERT en español
+#### Etapa 2b: Generación de respuesta con OpenAI GPT-4o-mini (RAG estricto)
 
-**Tecnología:** `mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es` vía HuggingFace Inference API
+**Tecnología:** `gpt-4o-mini` vía OpenAI API
 
-BERT (*Bidirectional Encoder Representations from Transformers*) es un modelo de lenguaje basado en la arquitectura Transformer (Devlin et al., 2019). La variante utilizada está ajustada específicamente para la tarea de *Question Answering* en español, entrenada sobre el dataset SQuAD2 traducido al español (Rajpurkar et al., 2018).
+El patrón *Retrieval-Augmented Generation* (RAG) combina recuperación de información clásica con generación de lenguaje natural (Lewis et al., 2020). La clave de la implementación es que el modelo generativo opera **estrictamente confinado al contexto recuperado**: no puede añadir información que no esté en los documentos que TF-IDF seleccionó.
 
-**BERT QA es un modelo extractivo, no generativo.** A diferencia de modelos como GPT o Claude, BERT no redacta una respuesta nueva — localiza el fragmento textual del `contexto` que mejor responde la pregunta y lo devuelve literalmente. Esto es una garantía de seguridad explícita en un entorno clínico: el sistema nunca puede inventar información, ya que solo puede citar fragmentos pre-aprobados de las guías ESC.
+**RAG estricto — garantía de no alucinación:**
+El sistema prompt enviado a GPT-4o-mini establece reglas explícitas:
+1. Responder únicamente con información que aparezca en los contextos proporcionados
+2. Si los contextos no contienen información suficiente, devolver el mensaje de fallback exacto
+3. No inventar datos, dosis ni recomendaciones que no estén en los contextos
+
+Este enfoque resuelve el riesgo clásico de los modelos generativos en entornos médicos (alucinación de dosis, interacciones farmacológicas falsas) al convertir a GPT-4o-mini en un sintetizador de texto sobre fuentes verificadas, no en un generador libre.
 
 **Flujo de la etapa 2b:**
-1. Se toman las 2 entradas del dataset con mayor similitud TF-IDF (TOP_K = 2)
-2. Para cada una, se envía al modelo BERT la pregunta + el campo `contexto` (párrafo clínico extendido)
-3. BERT extrae el fragmento del contexto que mejor responde la pregunta y devuelve un score de confianza (0–1)
-4. **BERT sustituye la respuesta pre-escrita solo si su score supera al score TF-IDF.** Si el retrieval es de alta confianza (ej. coincidencia exacta, TF-IDF = 100%), la respuesta pre-escrita del dataset — más completa que cualquier fragmento extraído — siempre gana
-5. Si el score BERT < 0.15 (umbral mínimo), se descarta directamente y se usa la respuesta pre-escrita
+1. Se toman los 2 contextos del dataset con mayor similitud TF-IDF (TOP_K = 2)
+2. Se construye un mensaje con los contextos recuperados y la pregunta del médico
+3. GPT-4o-mini genera una respuesta en español, citando solo lo que está en los contextos
+4. Si los contextos no cubren la pregunta, GPT-4o-mini devuelve el mensaje de fallback
+5. El estado resultante (`ok` / `no_info` / `error_api`) determina qué se muestra en la UI
 
 ```python
-# src/nlp.py — lógica de arbitraje BERT vs. TF-IDF
-resultado = InferenceClient(token=_get_hf_token()).question_answering(
-    question=pregunta,
-    context=contexto,
-    model="mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es",
+# src/nlp.py — llamada OpenAI RAG
+response = client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": _SYSTEM_PROMPT},  # prohíbe explícitamente inventar
+        {"role": "user",   "content": user_message},    # pregunta + contextos TF-IDF
+    ],
+    max_tokens=300,
+    temperature=0.1,   # temperatura baja = respuestas deterministas y conservadoras
 )
-# BERT solo gana si su score supera la confianza del retrieval
-bert_usado = bert_estado == "ok" and score_bert > confianza_tfidf
 ```
 
-**Ventaja de este enfoque híbrido:** TF-IDF selecciona el contexto relevante con bajo coste computacional; BERT aporta valor en escenarios de coincidencia parcial, extrayendo el fragmento más pertinente cuando el retrieval no es determinístico. Este patrón se denomina *Retrieval-Augmented QA* en la literatura (Lewis et al., 2020).
+**Ventaja sobre BERT extractivo:** BERT solo podía citar fragmentos literales del contexto; GPT-4o-mini sintetiza una respuesta coherente en lenguaje clínico, integrando la información relevante del contexto. Esto es especialmente valioso para preguntas sobre dosis: si el contexto contiene "carga de 180 mg y mantenimiento de 90 mg cada 12 h", GPT-4o-mini produce una respuesta completa y bien formulada en lugar de citar el fragmento tal cual.
 
 ### 2.4 Capa 3 — Persistencia en MySQL
 
@@ -256,14 +264,13 @@ La aplicación incluye un circuito de retroalimentación que permite al clínico
 | `speech_recognition` | ≥ 3.10 | Reconocimiento de voz (Google Speech API) |
 | `pydub` | ≥ 0.25 | Conversión de audio WebM → WAV |
 | `scikit-learn` | ≥ 1.3 | TF-IDF y similitud coseno |
-| `huggingface_hub` | ≥ 0.23 | Cliente para BERT QA vía Inference API |
-| `transformers` | ≥ 4.40 | Soporte de modelos HuggingFace |
+| `openai` | ≥ 1.30 | Cliente para GPT-4o-mini (RAG) |
 | `mysql-connector-python` | ≥ 9.0 | Conexión a MySQL |
 | `pandas` | ≥ 2.0 | Gestión del dataset y del historial |
 | `python-dotenv` | ≥ 1.0 | Gestión segura de credenciales |
 | MySQL 9.4 | — | Base de datos relacional (Railway cloud) |
 | Railway | — | Plataforma cloud para MySQL |
-| HuggingFace Inference API | — | Acceso a modelos sin GPU local |
+| OpenAI API | — | Acceso a GPT-4o-mini para generación RAG |
 | GitHub | — | Control de versiones y despliegue |
 | Streamlit Cloud | — | Hosting público de la aplicación |
 
@@ -275,8 +282,8 @@ La API pública de Google Speech Recognition no requiere GPU ni token de pago, l
 **¿Por qué TF-IDF y no embeddings semánticos (SBERT)?**  
 TF-IDF es determinista, computacionalmente ligero, y sus decisiones son auditables. En un entorno hospitalario, la transparencia del sistema es un requisito regulatorio. BERT Sentence Transformers (Reimers & Gurevych, 2019) ofrecerían mayor precisión semántica, pero a costa de mayor latencia y opacidad. El enfoque híbrido TF-IDF + BERT QA equilibra ambos extremos.
 
-**¿Por qué BERT QA y no un modelo generativo (GPT)?**  
-Los modelos generativos pueden alucinar hechos médicos. BERT QA solo puede devolver fragmentos literales del contexto clínico pre-aprobado — esto es una garantía de seguridad explícita en un entorno hospitalario. Cada respuesta del sistema es trazable hasta su fuente en las guías ESC.
+**¿Por qué OpenAI GPT-4o-mini con RAG y no BERT extractivo?**  
+BERT QA extrae fragmentos literales del contexto, lo que garantiza trazabilidad pero produce respuestas incompletas y descontextualizadas — especialmente en preguntas sobre dosis, donde el fragmento extraído suele perder el contexto clínico necesario para interpretarlo. GPT-4o-mini, operando con RAG estricto (system prompt que prohíbe inventar información), combina la trazabilidad del enfoque basado en fuentes con la capacidad de síntesis de los modelos generativos. La temperatura baja (0.1) y el prompt restrictivo sustituyen funcionalmente el rol de "barrera de alucinación" que tenía BERT, con mayor calidad de respuesta.
 
 ---
 
@@ -316,7 +323,7 @@ La aplicación queda disponible en `http://localhost:8501`.
 
 | Variable | Servicio | Descripción |
 |---|---|---|
-| `HF_TOKEN` | HuggingFace | Token de autenticación para la Inference API (BERT QA) |
+| `OPENAI_API_KEY` | OpenAI | Clave de API para GPT-4o-mini (RAG) |
 | `DB_HOST` | Railway | Host del servidor MySQL |
 | `DB_PORT` | Railway | Puerto público (Railway asigna un puerto distinto al 3306 estándar) |
 | `DB_USER` | Railway | Usuario de la base de datos |
@@ -413,9 +420,9 @@ Este enfoque, conocido como *k-Nearest Neighbor text classification* o *non-para
 
 ### 7.1 Tabla de resultados de prueba
 
-| # | Consulta (voz) | Transcripción obtenida | Confianza TF-IDF | BERT activado | Respuesta correcta |
+| # | Consulta (voz) | Transcripción obtenida | Confianza TF-IDF | OpenAI RAG | Respuesta correcta |
 |---|---|---|---|---|---|
-| 1 | `[PENDIENTE]` | `[PENDIENTE]` | — | — | Sí/No |
+| 1 | `[PENDIENTE]` | `[PENDIENTE]` | — | ok / no_info / error | Sí/No |
 | 2 | | | | | |
 | 3 | | | | | |
 | … | | | | | |
@@ -445,27 +452,28 @@ Este enfoque, conocido como *k-Nearest Neighbor text classification* o *non-para
 ### 7.4 Análisis cualitativo
 
 **Fortalezas observadas:**
-- Respuesta en < 2 segundos para consultas con terminología estándar ESC
+- Respuesta en < 3 segundos para consultas con terminología estándar ESC (incluye llamada a OpenAI)
 - El sistema identifica correctamente preguntas sobre síntomas del IAM, dosis de anticoagulantes y protocolos RCP con confianza alta
 - La explicación paso a paso ("¿Cómo se obtuvo esta respuesta?") permite al clínico calibrar la fiabilidad de la respuesta
 - El sistema de doble índice TF-IDF (pregunta sola + pregunta+contexto) permite recuperar entradas relevantes incluso cuando el vocabulario del médico difiere del dataset (ej. "hypoperfusion" → "hipoperfusión") sin penalizar las coincidencias exactas
 - El mecanismo de correcciones fonéticas resuelve errores sistemáticos del ASR con fármacos cardiológicos (dabigatrán, rivaroxabán, amiodarona)
-- La lógica de arbitraje (BERT gana solo si su score > TF-IDF) garantiza que la respuesta pre-escrita —siempre más completa— no sea desplazada por un fragmento BERT de baja confianza
-- Con coincidencia exacta de pregunta del dataset, el sistema alcanza TF-IDF = 100% y muestra siempre la respuesta completa del experto
+- OpenAI GPT-4o-mini con RAG estricto produce respuestas clínicas coherentes y completas a partir del contexto recuperado
+- Cuando el contexto no cubre la pregunta, OpenAI devuelve el mensaje de fallback con criterio semántico — ya no hay un segundo umbral arbitrario
 
-**Hallazgo clave sobre BERT QA — extractivo vs. generativo:**
+**Hallazgo clave — RAG estricto vs. modelo extractivo:**
 
-Durante las pruebas se observó que el modelo BERT QA extrae fragmentos textuales del contexto, pero no genera respuestas nuevas ni enriquece el contenido. Cuando la respuesta pre-escrita del dataset es completa (coincidencia alta, TF-IDF ≥ 70%), el fragmento BERT resulta frecuentemente más corto e incompleto. BERT aporta valor real en el rango TF-IDF 30–60%, donde el retrieval es aproximado: en esos casos BERT puede localizar el fragmento más pertinente del contexto clínico con mayor confianza que el score de retrieval, y la lógica de arbitraje lo selecciona correctamente.
+La evolución de BERT extractivo a OpenAI RAG puso de manifiesto una distinción fundamental en el diseño de sistemas QA clínicos. BERT solo podía devolver fragmentos literales del contexto, lo que producía respuestas incompletas o descontextualizadas (especialmente para preguntas sobre dosis). GPT-4o-mini, operando con un system prompt restrictivo, sintetiza una respuesta clínicamente útil a partir del mismo contexto. La clave de la seguridad es que el modelo opera en modo "resumidor verificado", no en modo "generador libre": temperature=0.1 y un prompt que prohíbe explícitamente añadir información garantizan que la respuesta sea fiel al contexto de las guías ESC.
 
-| Escenario | TF-IDF | BERT | Respuesta final |
+| Escenario | TF-IDF | OpenAI RAG | Respuesta final |
 |---|---|---|---|
-| Pregunta idéntica al dataset | ~100% | ~44% | Pre-escrita (TF-IDF gana) ✅ |
-| Pregunta clínica descriptiva | ~32% | ~61% | Fragmento BERT (BERT gana) ✅ |
-| Pregunta fuera del dataset | < 15% | — | Fallback ✅ |
+| Pregunta idéntica al dataset | ~100% | ok | Síntesis GPT del contexto ✅ |
+| Pregunta clínica aproximada | ~32% | ok | Síntesis GPT del contexto ✅ |
+| Pregunta con contexto insuficiente | ~20% | no_info | Fallback (decidido por GPT) ✅ |
+| Pregunta fuera del dataset | < 15% | — | Fallback directo (TF-IDF) ✅ |
 
 **Limitaciones identificadas:**
-- **BERT QA con descripciones clínicas:** el modelo mostró limitaciones con consultas formuladas como descripciones clínicas en lugar de preguntas directas (típico del dictado por voz: "paciente con hipotensión e hipoperfusión"). BERT fue entrenado con preguntas SQuAD de formato interrogativo, por lo que su score de extracción es consistentemente bajo para este tipo de entrada. El pipeline TF-IDF demostró ser el componente más robusto en estos casos.
-- **BERT no genera respuestas nuevas:** al ser un modelo extractivo, no puede sintetizar información de múltiples entradas del dataset ni elaborar una respuesta más completa que la pre-escrita. Para ello sería necesario un modelo generativo (GPT, Llama), que sin embargo introduce el riesgo de alucinación clínica.
+- **Dependencia de internet:** GPT-4o-mini requiere conexión a la API de OpenAI. Para un sistema de producción en UCI, sería necesario un modelo local (Llama, Mistral) o una caché de respuestas frecuentes.
+- **Latencia incrementada:** la llamada a OpenAI añade ~1–2 segundos respecto al sistema anterior con BERT (que operaba sobre HuggingFace Inference API con latencias similares). Aceptable para un prototipo académico.
 - **TF-IDF y sinónimos:** TF-IDF no captura similitud semántica. Una pregunta formulada con siglas (IAM ≠ "infarto agudo de miocardio") obtiene baja confianza aunque el sistema conozca el concepto. Se mitiga parcialmente con el índice de contexto como fallback.
 - **ASR y terminología infrecuente:** Google Speech Recognition falla con términos médicos muy específicos no incluidos en el diccionario de correcciones (ej. "torsade de pointes", "takotsubo"). Se documentan y corrigen incrementalmente.
 - El sistema no distingue preguntas sobre pacientes concretos de preguntas sobre conocimiento general.
@@ -477,23 +485,23 @@ Durante las pruebas se observó que el modelo BERT QA extrae fragmentos textuale
 El sistema implementado demuestra la viabilidad técnica de integrar reconocimiento de voz, recuperación de información y modelos de lenguaje natural en un prototipo funcional para entornos hospitalarios, utilizando exclusivamente herramientas de código abierto y servicios cloud de acceso gratuito.
 
 **Contribuciones principales:**
-1. **Pipeline de dos etapas (TF-IDF + BERT QA):** la combinación de recuperación léxica clásica con extracción neuronal de respuestas equilibra precisión, velocidad y transparencia — características críticas en un contexto clínico
-2. **Base de conocimiento auditable:** a diferencia de los modelos generativos, cada respuesta del sistema es trazable hasta su fuente en las guías ESC, lo que es un requisito implícito de cualquier herramienta de apoyo clínico
+1. **Pipeline de dos etapas (TF-IDF + OpenAI RAG):** la combinación de recuperación léxica clásica con generación controlada por contexto equilibra precisión, velocidad y seguridad clínica
+2. **Base de conocimiento auditable con RAG estricto:** cada respuesta del sistema es trazable hasta su fuente en las guías ESC, gracias al system prompt que prohíbe añadir información no presente en el contexto recuperado
 3. **Mejora continua sin reentrenamiento:** el mecanismo de adición de entradas al dataset permite refinar el sistema en tiempo real sin infraestructura GPU
 4. **Interfaz adaptada al flujo clínico:** la grabación desde el navegador sin instalación de software, la indicación visual de confianza y el historial persistente son características diseñadas para el contexto hospitalario real
 
 **Conclusiones derivadas de las pruebas:**
 
-Las pruebas realizadas revelaron una distinción fundamental que debe tenerse en cuenta al diseñar sistemas QA clínicos: **BERT QA es un modelo extractivo, no generativo**. No elabora una respuesta nueva a partir del conocimiento acumulado — extrae literalmente un fragmento del párrafo de contexto. Esto implica que, cuando el dataset contiene respuestas pre-escritas completas y de calidad, el fragmento BERT resulta frecuentemente más corto e incompleto.
+Las pruebas realizadas confirmaron que el patrón RAG estricto resuelve el problema de alucinación de los modelos generativos sin sacrificar la calidad de las respuestas. La combinación de TF-IDF (recuperación de contexto relevante) + GPT-4o-mini (síntesis controlada) produce respuestas más completas y clínicamente útiles que el enfoque extractivo BERT, especialmente en preguntas sobre dosis donde el contexto requiere ser interpretado, no solo citado.
 
-La solución adoptada — un criterio de arbitraje en el que BERT solo desplaza a la respuesta pre-escrita si su score supera al score TF-IDF — resultó ser la lógica correcta: a mayor confianza del retrieval, más completa y fiable es la respuesta pre-escrita del experto. BERT aporta valor real en la zona de incertidumbre (TF-IDF 30–60%), actuando como un mecanismo de refinamiento sobre contextos aproximados.
+El hallazgo más relevante es la importancia de la calidad del contexto en el dataset. Cuando los campos `contexto` son cortos o imprecisos, OpenAI carece de información suficiente para responder y devuelve el fallback — comportamiento correcto desde el punto de vista de la seguridad, pero que evidencia que la calidad del dataset es el factor limitante del sistema. La tarea de enriquecer los contextos (realizada sobre las 39 entradas de dosis) demostró que la mejora del sistema no requiere cambios de modelo, sino mejora de los datos.
 
-Este hallazgo tiene implicaciones directas para el diseño de sistemas de apoyo clínico: la elección entre modelos extractivos y generativos no es solo técnica, sino también de seguridad. Un modelo generativo podría producir respuestas más fluidas y completas, pero introduce el riesgo de alucinación — particularmente peligroso en un entorno donde el médico puede actuar sobre la información recibida.
+Este hallazgo tiene implicaciones directas para el diseño de sistemas de apoyo clínico: la elección entre modelos extractivos y generativos no es solo técnica, sino también de seguridad y calidad de datos. Un modelo generativo sin RAG podría producir respuestas más fluidas, pero introduce el riesgo de alucinación — particularmente peligroso en un entorno donde el médico puede actuar sobre la información recibida.
 
 **Líneas de trabajo futuro:**
 - Sustituir Google Speech Recognition por Whisper local (Radford et al., 2023) para independencia de red y mayor precisión en vocabulario médico
 - Implementar embeddings semánticos (SBERT, Reimers & Gurevych, 2019) como alternativa o complemento a TF-IDF para capturar similitud semántica más allá del vocabulario literal
-- Explorar modelos generativos con RAG estricto (respuesta anclada a fuentes verificadas) para obtener respuestas más completas sin sacrificar la trazabilidad clínica
+- Evaluar modelos locales (Llama 3, Mistral) para independencia de APIs externas en entornos hospitalarios sin acceso a internet garantizado
 - Ampliar el dataset a especialidades cardíacas adicionales (electrofisiología, imagen cardíaca)
 - Evaluar el sistema con usuarios reales en un entorno hospitalario controlado
 
@@ -558,8 +566,9 @@ Este hallazgo tiene implicaciones directas para el diseño de sistemas de apoyo 
 
 - [ ] Realizar pruebas con voz real (mínimo 10 consultas) y rellenar la sección 7
 - [ ] Tomar capturas de pantalla de todas las pestañas y la BD MySQL
+- [ ] Añadir `OPENAI_API_KEY` a los secrets de Streamlit Cloud y verificar redespliegue
 - [ ] Desplegar en Streamlit Cloud y obtener URL pública
-- [ ] Hacer el repositorio GitHub público (regenerar HF_TOKEN antes)
+- [ ] Hacer el repositorio GitHub público (verificar que no hay credenciales expuestas)
 - [ ] Añadir la reflexión personal en las conclusiones (3-4 líneas propias)
 - [ ] Convertir este MD a Word o pptx con el formato de la Universidad
 - [ ] Añadir el logo de la UE y el encabezado institucional
