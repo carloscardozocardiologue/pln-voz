@@ -440,17 +440,21 @@ Este enfoque, conocido como *k-Nearest Neighbor text classification* o *non-para
 > 6. MySQL Railway — `SELECT * FROM consultas LIMIT 10;` (evidencia de persistencia)
 > 7. URL pública de Streamlit Cloud
 
-### 7.4 Análisis cualitativo (borrador)
+### 7.4 Análisis cualitativo
 
 **Fortalezas observadas:**
 - Respuesta en < 2 segundos para consultas con terminología estándar ESC
 - El sistema identifica correctamente preguntas sobre síntomas del IAM, dosis de anticoagulantes y protocolos RCP con confianza alta
 - La explicación paso a paso ("¿Cómo se obtuvo esta respuesta?") permite al clínico calibrar la fiabilidad de la respuesta
+- El índice TF-IDF construido sobre `pregunta + contexto` permite recuperar entradas relevantes incluso cuando el vocabulario del médico difiere del dataset (ej. "hypoperfusion" → "hipoperfusión")
+- El mecanismo de correcciones fonéticas resuelve errores sistemáticos del ASR con fármacos cardiológicos (dabigatrán, rivaroxabán, amiodarona)
+- Cuando BERT supera el umbral de confianza, la barra muestra su score directamente, ofreciendo una indicación más precisa de la calidad de la respuesta
 
 **Limitaciones identificadas:**
-- TF-IDF no captura sinónimos ni abreviaturas médicas (IAM ≠ "infarto agudo de miocardio" en el espacio léxico). Una pregunta formulada con siglas obtiene baja confianza aunque el sistema conozca el concepto
-- Google Speech Recognition falla ocasionalmente con términos médicos poco frecuentes (ej. "torsade de pointes", "takotsubo")
-- El sistema no distingue preguntas sobre pacientes concretos de preguntas sobre conocimiento general
+- **BERT QA con descripciones clínicas:** el modelo mostró limitaciones con consultas formuladas como descripciones clínicas en lugar de preguntas directas (típico del dictado por voz: "paciente con hipotensión e hipoperfusión"). BERT fue entrenado con preguntas SQuAD de formato interrogativo, por lo que su score de extracción es consistentemente bajo para este tipo de entrada. El pipeline TF-IDF demostró ser el componente más robusto, recuperando la entrada correcta incluso con vocabulario parcialmente diferente.
+- **TF-IDF y sinónimos:** TF-IDF no captura similitud semántica. Una pregunta formulada con siglas (IAM ≠ "infarto agudo de miocardio") obtiene baja confianza aunque el sistema conozca el concepto. Se mitiga parcialmente con el índice construido sobre pregunta + contexto.
+- **ASR y terminología infrecuente:** Google Speech Recognition falla con términos médicos muy específicos no incluidos en el diccionario de correcciones (ej. "torsade de pointes", "takotsubo"). Se documentan y corrigen incrementalmente.
+- El sistema no distingue preguntas sobre pacientes concretos de preguntas sobre conocimiento general.
 
 ---
 
