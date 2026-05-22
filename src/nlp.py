@@ -149,7 +149,7 @@ def responder(pregunta: str) -> dict:
 
     # — Etapa 3: respuesta final —
     mejor_fila      = _df.iloc[top_indices[0]]
-    bert_usado      = bert_estado == "ok"
+    bert_usado      = bert_estado == "ok" and score_bert > confianza_tfidf
     respuesta_final = respuesta_bert if bert_usado else mejor_fila["respuesta"]
     return {
         "respuesta":        respuesta_final,
