@@ -128,11 +128,10 @@ with tab_asistente:
             except Exception as e:
                 st.error(f"Error en la transcripción: {e}")
                 st.stop()
-        st.success("Transcripción completada")
     elif consultar and texto_escrito.strip():
         transcripcion = texto_escrito.strip()
 
-    # Procesar nueva consulta y guardar en session_state
+    # Procesar nueva consulta, limpiar inputs y refrescar
     if transcripcion:
         with st.spinner("Procesando con el modelo de lenguaje..."):
             inicio = time.time()
@@ -148,6 +147,7 @@ with tab_asistente:
             "resultado":     resultado,
             "duracion_ms":   duracion_ms,
         }
+        st.session_state["input_key"] = _k + 1
         try:
             guardar(
                 resultado["categoria"], transcripcion,
@@ -155,6 +155,7 @@ with tab_asistente:
             )
         except Exception as e:
             st.warning(f"No se pudo guardar en la base de datos: {e}")
+        st.rerun()
 
     # Mostrar el último resultado (persiste aunque el rerun sea por el botón Mejorar)
     if st.session_state["ultima_consulta"]:
