@@ -169,7 +169,11 @@ with tab_asistente:
         pregunta_dataset = uc["resultado"].get("pregunta_dataset", "")
         pregunta         = uc["transcripcion"]
 
-        st.markdown(f"**Médico:** _{pregunta}_")
+        st.markdown(
+            f"<span style='color:#1a6fcc; font-weight:bold'>Médico:</span> "
+            f"<span style='color:#1a6fcc; font-style:italic'>{pregunta}</span>",
+            unsafe_allow_html=True,
+        )
         st.divider()
         st.caption(f"Categoría detectada: {categoria}")
         st.markdown(f"**Asistente:** {respuesta}")
