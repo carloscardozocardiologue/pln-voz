@@ -228,9 +228,9 @@ with tab_asistente:
             )
             st.markdown(_bert_textos.get(bert_estado, ""))
             st.divider()
-            if confianza >= 0.7:
+            if confianza_display >= 0.7:
                 st.success("Coincidencia alta — la respuesta es fiable.")
-            elif confianza >= 0.4:
+            elif confianza_display >= 0.4:
                 st.warning("Coincidencia media — reformular la pregunta con términos más específicos puede mejorar el resultado.")
             else:
                 st.error("Coincidencia baja — la pregunta se aleja del dataset y la respuesta puede no ser precisa.")
