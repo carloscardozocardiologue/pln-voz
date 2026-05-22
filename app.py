@@ -367,9 +367,16 @@ with tab_conocimiento:
     st.markdown("**Entradas actuales del dataset**")
     df_dataset = pd.read_csv(_DATA_PATH)
     st.dataframe(
-        df_dataset[["id", "categoria", "pregunta", "respuesta"]],
+        df_dataset[["id", "categoria", "pregunta", "respuesta", "contexto"]],
         use_container_width=True,
         hide_index=True,
+        column_config={
+            "id":        st.column_config.NumberColumn("ID",        width="small"),
+            "categoria": st.column_config.TextColumn("Categoría",  width="small"),
+            "pregunta":  st.column_config.TextColumn("Pregunta",   width="medium"),
+            "respuesta": st.column_config.TextColumn("Respuesta",  width="medium"),
+            "contexto":  st.column_config.TextColumn("Contexto",   width="large"),
+        },
     )
 
     st.divider()
