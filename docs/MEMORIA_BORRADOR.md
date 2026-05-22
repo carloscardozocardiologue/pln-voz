@@ -177,35 +177,44 @@ IDF(t)   = log( N / df(t) )
 
 El patrón *Retrieval-Augmented Generation* (RAG) combina recuperación de información clásica con generación de lenguaje natural (Lewis et al., 2020). La clave de la implementación es que el modelo generativo opera **estrictamente confinado al contexto recuperado**: no puede añadir información que no esté en los documentos que TF-IDF seleccionó.
 
-**RAG estricto — garantía de no alucinación:**
-El sistema prompt enviado a GPT-4o-mini establece reglas explícitas:
-1. Responder únicamente con información que aparezca en los contextos proporcionados
-2. Si los contextos no contienen información suficiente, devolver el mensaje de fallback exacto
-3. No inventar datos, dosis ni recomendaciones que no estén en los contextos
+**RAG estricto con dos fuentes — garantía de no alucinación:**
 
-Este enfoque resuelve el riesgo clásico de los modelos generativos en entornos médicos (alucinación de dosis, interacciones farmacológicas falsas) al convertir a GPT-4o-mini en un sintetizador de texto sobre fuentes verificadas, no en un generador libre.
+Para cada entrada recuperada por TF-IDF, GPT-4o-mini recibe dos campos del dataset:
+
+| Fuente | Origen | Rol en el prompt |
+|---|---|---|
+| `Respuesta de referencia` | Campo `respuesta` del CSV | Fuente principal — validada por el clínico |
+| `Contexto clínico` | Campo `contexto` del CSV | Respaldo — párrafo de las guías ESC |
+
+El sistema prompt establece que GPT-4o-mini debe basarse principalmente en la "Respuesta de referencia" y complementar con el "Contexto clínico" solo si aporta información adicional relevante. En ningún caso puede añadir información que no esté en alguna de las dos fuentes.
 
 **Flujo de la etapa 2b:**
-1. Se toman los 2 contextos del dataset con mayor similitud TF-IDF (TOP_K = 2)
-2. Se construye un mensaje con los contextos recuperados y la pregunta del médico
-3. GPT-4o-mini genera una respuesta en español, citando solo lo que está en los contextos
-4. Si los contextos no cubren la pregunta, GPT-4o-mini devuelve el mensaje de fallback
+1. Se toman los 2 resultados del dataset con mayor similitud TF-IDF (TOP_K = 2)
+2. Para cada uno, se envían a GPT-4o-mini tanto el campo `respuesta` como el campo `contexto`
+3. GPT-4o-mini sintetiza una respuesta en español a partir de ambas fuentes
+4. Si ninguna fuente cubre la pregunta, GPT-4o-mini devuelve el mensaje de fallback exacto
 5. El estado resultante (`ok` / `no_info` / `error_api`) determina qué se muestra en la UI
 
 ```python
-# src/nlp.py — llamada OpenAI RAG
+# src/nlp.py — construcción del mensaje con dos fuentes por entrada
+fuentes_texto = "\n\n".join(
+    f"Entrada {i + 1}:\n"
+    f"  Respuesta de referencia: {ctx['respuesta']}\n"
+    f"  Contexto clínico: {ctx['contexto']}"
+    for i, ctx in enumerate(contextos)
+)
 response = client.chat.completions.create(
     model="gpt-4o-mini",
     messages=[
-        {"role": "system", "content": _SYSTEM_PROMPT},  # prohíbe explícitamente inventar
-        {"role": "user",   "content": user_message},    # pregunta + contextos TF-IDF
+        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "user",   "content": f"Pregunta: {pregunta}\n\nFuentes:\n{fuentes_texto}"},
     ],
     max_tokens=300,
-    temperature=0.1,   # temperatura baja = respuestas deterministas y conservadoras
+    temperature=0.1,
 )
 ```
 
-**Ventaja sobre BERT extractivo:** BERT solo podía citar fragmentos literales del contexto; GPT-4o-mini sintetiza una respuesta coherente en lenguaje clínico, integrando la información relevante del contexto. Esto es especialmente valioso para preguntas sobre dosis: si el contexto contiene "carga de 180 mg y mantenimiento de 90 mg cada 12 h", GPT-4o-mini produce una respuesta completa y bien formulada en lugar de citar el fragmento tal cual.
+**Ventaja sobre BERT extractivo y sobre RAG de un solo campo:** BERT solo citaba fragmentos literales del `contexto`; el primer diseño RAG solo leía el `contexto` (lo que causaba fallbacks cuando las dosis estaban en `respuesta` pero no en `contexto`). El diseño final pasa ambos campos, permitiendo que GPT-4o-mini use la respuesta validada por el clínico como fuente primaria y el párrafo ESC como soporte, produciendo respuestas completas sin riesgo de alucinación.
 
 ### 2.4 Capa 3 — Persistencia en MySQL
 
@@ -460,9 +469,15 @@ Este enfoque, conocido como *k-Nearest Neighbor text classification* o *non-para
 - OpenAI GPT-4o-mini con RAG estricto produce respuestas clínicas coherentes y completas a partir del contexto recuperado
 - Cuando el contexto no cubre la pregunta, OpenAI devuelve el mensaje de fallback con criterio semántico — ya no hay un segundo umbral arbitrario
 
-**Hallazgo clave — RAG estricto vs. modelo extractivo:**
+**Hallazgo clave — evolución del diseño RAG:**
 
-La evolución de BERT extractivo a OpenAI RAG puso de manifiesto una distinción fundamental en el diseño de sistemas QA clínicos. BERT solo podía devolver fragmentos literales del contexto, lo que producía respuestas incompletas o descontextualizadas (especialmente para preguntas sobre dosis). GPT-4o-mini, operando con un system prompt restrictivo, sintetiza una respuesta clínicamente útil a partir del mismo contexto. La clave de la seguridad es que el modelo opera en modo "resumidor verificado", no en modo "generador libre": temperature=0.1 y un prompt que prohíbe explícitamente añadir información garantizan que la respuesta sea fiel al contexto de las guías ESC.
+El desarrollo pasó por tres iteraciones que pusieron de manifiesto aspectos no evidentes del diseño de sistemas QA clínicos:
+
+1. **BERT extractivo:** devolvía fragmentos literales del `contexto`. Garantizaba trazabilidad pero producía respuestas incompletas, especialmente para preguntas sobre dosis donde el fragmento extraído perdía el contexto clínico.
+2. **OpenAI RAG solo con `contexto`:** GPT-4o-mini generaba respuestas más coherentes, pero fallaba cuando la información clave (las dosis numéricas) estaba en el campo `respuesta` del dataset y no en el `contexto`. OpenAI correctamente devolvía el fallback al no encontrar la información — comportamiento seguro, pero que revelaba una inconsistencia en el diseño del dataset.
+3. **OpenAI RAG con `respuesta` + `contexto` (diseño final):** al pasar ambos campos, GPT-4o-mini usa la respuesta validada por el clínico como fuente primaria y el párrafo ESC como soporte. Esto elimina los falsos fallbacks por datos "escondidos" en el campo incorrecto y produce respuestas completas y trazables.
+
+Este proceso iterativo ilustra que en sistemas RAG clínicos, la calidad y consistencia del dataset es tan crítica como la elección del modelo.
 
 | Escenario | TF-IDF | OpenAI RAG | Respuesta final |
 |---|---|---|---|

@@ -88,7 +88,7 @@ Copia `.env.example` a `.env` y rellena los valores. El `.env` nunca se sube a g
 ## Comportamientos clave del pipeline NLP
 
 - **Doble índice TF-IDF:** matriz 1 sobre `pregunta` sola (scores altos para coincidencias exactas); matriz 2 sobre `pregunta+contexto` como fallback cuando el score de la primera es < 35%. Esto evita que una coincidencia exacta puntúe 49% en vez de ~100%.
-- **OpenAI RAG estricto:** TF-IDF recupera los top-2 contextos y se los pasa a GPT-4o-mini con un system prompt que prohíbe explícitamente inventar información. Si el contexto no cubre la pregunta, OpenAI devuelve el mensaje de fallback. Esto elimina las alucinaciones.
+- **OpenAI RAG estricto (dos fuentes):** TF-IDF recupera los top-2 resultados y pasa a GPT-4o-mini tanto la `respuesta` del dataset (fuente principal, validada por el clínico) como el `contexto` clínico (párrafo ESC, como respaldo). Un system prompt prohíbe añadir información que no esté en ninguna de las dos fuentes. Si las fuentes no cubren la pregunta, OpenAI devuelve el mensaje de fallback.
 - **Un solo umbral:** si TF-IDF ≥ 0.15 se llama a OpenAI; por debajo se muestra el fallback directamente. OpenAI actúa como árbitro semántico de si el contexto es suficiente — ya no hay un segundo umbral artificial.
 - **Confianza mostrada:** siempre el score TF-IDF (OpenAI no devuelve puntuación numérica). La etiqueta indica "OpenAI + TF-IDF" cuando OpenAI generó la respuesta, "TF-IDF" cuando se usó la pre-escrita.
 - Las categorías de consulta son: **Síntomas**, **Medicamentos**, **Protocolos**.
