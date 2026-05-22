@@ -6,57 +6,90 @@ from pydub import AudioSegment
 
 # Correcciones fonéticas: lo que Google SR transcribe → término médico correcto
 _CORRECCIONES = {
-    # Anticoagulantes
-    "david galan":       "dabigatrán",
-    "david galán":       "dabigatrán",
-    "david gatran":      "dabigatrán",
-    "davigatran":        "dabigatrán",
-    "rival oxaban":      "rivaroxabán",
-    "rivaroxaban":       "rivaroxabán",
-    "apixa van":         "apixabán",
-    "apixa ban":         "apixabán",
-    "apixaban":          "apixabán",
-    "edoxaban":          "edoxabán",
-    # Antiarrítmicos
-    "amio darona":       "amiodarona",
-    "amio de rona":      "amiodarona",
-    "flecainida":        "flecainida",
-    "propafenona":       "propafenona",
-    # Insuficiencia cardíaca
-    "sacubitrilo":       "sacubitrilo",
-    "sacubitril":        "sacubitrilo",
-    "ivabradina":        "ivabradina",
-    "espironolactona":   "espironolactona",
-    "eplerenona":        "eplerenona",
-    "empagliflocina":    "empagliflozina",
-    "empagliflozina":    "empagliflozina",
-    "dapagliflozina":    "dapagliflozina",
-    # IECA / ARA-II
-    "ramipril":          "ramipril",
-    "enalapril":         "enalapril",
-    "losartan":          "losartán",
-    "valsartan":         "valsartán",
-    # Betabloqueantes
-    "bisoprolol":        "bisoprolol",
-    "carvedilol":        "carvedilol",
-    "metoprolol":        "metoprolol",
-    # Estatinas
-    "atorvastatina":     "atorvastatina",
-    "rosuvastatina":     "rosuvastatina",
-    # Términos clínicos frecuentes
-    "fibrilacion":       "fibrilación",
-    "taquicardia supraventricular": "taquicardia supraventricular",
-    "sindrome coronario": "síndrome coronario agudo",
-    "infarto agudo":     "infarto agudo de miocardio",
+    # ── Anticoagulantes ───────────────────────────────────────────────
+    "david galan":          "dabigatrán",
+    "david galán":          "dabigatrán",
+    "david gatran":         "dabigatrán",
+    "davigatran":           "dabigatrán",
+    "dabiga tran":          "dabigatrán",
+    "rival oxaban":         "rivaroxabán",
+    "ribaroxaban":          "rivaroxabán",
+    "rivaroxaban":          "rivaroxabán",
+    "apixa van":            "apixabán",
+    "apixa ban":            "apixabán",
+    "apixaban":             "apixabán",
+    "edoxaban":             "edoxabán",
+    # ── Antiagregantes ───────────────────────────────────────────────
+    "tica grelor":          "ticagrelor",
+    "ticker grelor":        "ticagrelor",
+    "tika grelor":          "ticagrelor",
+    "prazo grel":           "prasugrel",
+    "clopi dogrel":         "clopidogrel",
+    # ── Antiarrítmicos ───────────────────────────────────────────────
+    "amio darona":          "amiodarona",
+    "amio de rona":         "amiodarona",
+    "drone darona":         "dronedarona",
+    "dron darona":          "dronedarona",
+    # ── Insuficiencia cardíaca ────────────────────────────────────────
+    "sacubitril":           "sacubitrilo",
+    "saku bitrilo":         "sacubitrilo",
+    "epler enona":          "eplerenona",
+    "espiro nolactona":     "espironolactona",
+    "empagliflocina":       "empagliflozina",
+    "empagliflozina":       "empagliflozina",
+    "dapagliflocina":       "dapagliflozina",
+    "canagliflocina":       "canagliflozina",
+    # ── IECA / ARA-II ────────────────────────────────────────────────
+    "perindo pril":         "perindopril",
+    "cande sartan":         "candesartán",
+    "candesartan":          "candesartán",
+    "irbe sartan":          "irbesartán",
+    "irbesartan":           "irbesartán",
+    "olme sartan":          "olmesartán",
+    "olmesartan":           "olmesartán",
+    "telmi sartan":         "telmisartán",
+    "telmisartan":          "telmisartán",
+    "losartan":             "losartán",
+    "valsartan":            "valsartán",
+    # ── Betabloqueantes ──────────────────────────────────────────────
+    "nebi bolol":           "nebivolol",
+    "nebi volol":           "nebivolol",
+    # ── Calcioantagonistas ───────────────────────────────────────────
+    "amlo dipino":          "amlodipino",
+    "vera pamilo":          "verapamilo",
+    "dil tia sem":          "diltiazem",
+    "diltia sem":           "diltiazem",
+    # ── Estatinas ────────────────────────────────────────────────────
+    "rosu vastatina":       "rosuvastatina",
+    "pita vastatina":       "pitavastatina",
+    # ── Términos clínicos con tildes ─────────────────────────────────
+    "fibrilacion":          "fibrilación",
+    "fibrilacion auricular":"fibrilación auricular",
+    "ablacion":             "ablación",
+    "cardioversion":        "cardioversión",
+    "desfibrilacion":       "desfibrilación",
+    "resincronizacion":     "resincronización",
+    "resin cronizacion":    "resincronización",
+    "trombo embolia":       "tromboembolia",
+    "trombo embolismo":     "tromboembolismo",
+    "sindrome coronario":   "síndrome coronario",
     "insuficiencia cardiaca": "insuficiencia cardíaca",
+    "arritmia":             "arritmia",
+    "hipertension":         "hipertensión",
+    "hipertension arterial":"hipertensión arterial",
+    "disfuncion":           "disfunción",
+    "intervencion":         "intervención",
+    "oclusion":             "oclusión",
+    "estenosis":            "estenosis",
 }
 
 
 def _corregir(texto: str) -> str:
+    """Aplica el diccionario de correcciones fonéticas al texto transcrito."""
     t = texto.lower()
-    for erroneo, correcto in _CORRECCIONES.items():
+    # Ordenamos por longitud descendente para que las frases largas tengan prioridad
+    for erroneo, correcto in sorted(_CORRECCIONES.items(), key=lambda x: -len(x[0])):
         t = t.replace(erroneo, correcto)
-    # Restaurar mayúscula inicial
     return t[0].upper() + t[1:] if t else t
 
 
