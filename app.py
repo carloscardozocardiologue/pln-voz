@@ -203,8 +203,9 @@ with tab_asistente:
                 f"La respuesta que ves es ese fragmento, más preciso que el texto pre-escrito.",
             "score_bajo":
                 f"ℹ️ **Paso 2 — BERT ({score_bert:.0%}):** el modelo analizó el párrafo clínico "
-                f"pero no encontró un fragmento más preciso que la respuesta ya disponible en el dataset. "
-                f"Se muestra el texto pre-escrito, que es la respuesta correcta.",
+                f"pero no encontró un fragmento con suficiente certeza. "
+                f"Se muestra el texto pre-escrito del dataset. "
+                f"Consulta la barra de confianza para valorar la fiabilidad de la respuesta.",
             "error_api":
                 "⚠️ **Paso 2 — BERT:** no se pudo conectar con la API de HuggingFace "
                 "(problema de red o límite de uso momentáneo). "
