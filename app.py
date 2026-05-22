@@ -108,6 +108,7 @@ with tab_asistente:
     consultar = col_btn.button("Consultar", use_container_width=True, type="primary")
     if col_nueva.button("Nueva consulta", use_container_width=True, type="secondary"):
         st.session_state["ultima_consulta"] = None
+        st.rerun()
 
     # Inicializar estado persistente entre reruns
     if "ultima_consulta" not in st.session_state:
