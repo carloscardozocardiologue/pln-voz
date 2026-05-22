@@ -9,6 +9,7 @@ Fallback: si BERT no supera el umbral de confianza, devuelve la respuesta
 """
 
 import os
+import re
 import unicodedata
 import pandas as pd
 from pathlib import Path
@@ -28,8 +29,14 @@ _TOP_K        = 2
 
 
 def _normalizar(texto: str) -> str:
-    """Minúsculas y sin tildes para que TF-IDF no distinga síntomas/sintomas."""
+    """Minúsculas, sin tildes y prefijos médicos normalizados al español."""
     texto = texto.lower()
+    # Prefijos inglés/francés → español
+    texto = re.sub(r'\bhypo', 'hipo', texto)
+    texto = re.sub(r'\bhyper', 'hiper', texto)
+    texto = re.sub(r'\bpneu', 'neu', texto)
+    texto = re.sub(r'\bthrombo', 'trombo', texto)
+    texto = re.sub(r'\barrhyth', 'arrit', texto)
     nfkd  = unicodedata.normalize("NFKD", texto)
     return "".join(c for c in nfkd if not unicodedata.combining(c))
 
