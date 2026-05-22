@@ -64,7 +64,7 @@ def dialog_mejorar(pregunta: str, cat: str):
     st.info(pregunta)
     nueva_respuesta = st.text_area("Respuesta corta (visible en la app)", height=80)
     nuevo_contexto  = st.text_area(
-        "Contexto completo (párrafo del que BERT extrae la respuesta)", height=130
+        "Contexto clínico completo (OpenAI lo usa para generar la respuesta)", height=130
     )
     if st.button("Guardar en el dataset", type="primary"):
         if not nueva_respuesta.strip() or not nuevo_contexto.strip():
@@ -166,9 +166,8 @@ with tab_asistente:
         confianza        = uc["resultado"]["confianza"]
         respuesta        = uc["resultado"]["respuesta"]
         categoria        = uc["resultado"]["categoria"]
-        bert_usado       = uc["resultado"].get("bert_usado", False)
-        bert_estado      = uc["resultado"].get("bert_estado", "no_aplicable")
-        score_bert       = uc["resultado"].get("score_bert", 0.0)
+        openai_usado     = uc["resultado"].get("openai_usado", False)
+        openai_estado    = uc["resultado"].get("openai_estado", "sin_clave")
         pregunta_dataset = uc["resultado"].get("pregunta_dataset", "")
         pregunta         = uc["transcripcion"]
 
@@ -183,9 +182,8 @@ with tab_asistente:
         st.markdown(f"**Asistente:** {respuesta}")
         st.write("")
 
-        # Cuando BERT tuvo éxito, su score es más representativo que el TF-IDF
-        confianza_display = score_bert if bert_usado else confianza
-        fuente_confianza  = "BERT" if bert_usado else "TF-IDF"
+        confianza_display = confianza
+        fuente_confianza  = "OpenAI + TF-IDF" if openai_usado else "TF-IDF"
         color = "green" if confianza_display >= 0.7 else "orange" if confianza_display >= 0.4 else "red"
         col_conf, col_mejorar = st.columns([5, 1])
         with col_conf:
@@ -203,25 +201,21 @@ with tab_asistente:
 
         # — Explicación del resultado —
         total_entradas = uc["resultado"].get("total_entradas", 500)
-        _bert_textos = {
+        _openai_textos = {
             "ok":
-                f"✅ **Paso 2 — BERT ({score_bert:.0%}):** el modelo leyó el párrafo clínico "
-                f"asociado a esa entrada y extrajo el fragmento que mejor responde tu pregunta. "
-                f"La respuesta que ves es ese fragmento, más preciso que el texto pre-escrito.",
-            "score_bajo":
-                f"ℹ️ **Paso 2 — BERT ({score_bert:.0%}):** el modelo analizó el párrafo clínico "
-                f"pero no encontró un fragmento con suficiente certeza. "
-                f"Se muestra el texto pre-escrito del dataset. "
-                f"Consulta la barra de confianza para valorar la fiabilidad de la respuesta.",
+                "✅ **Paso 2 — OpenAI GPT:** el modelo leyó los contextos clínicos "
+                "recuperados por TF-IDF y generó una respuesta basándose estrictamente "
+                "en esa información. La respuesta es fiel al contenido del dataset.",
+            "no_info":
+                "ℹ️ **Paso 2 — OpenAI GPT:** los contextos recuperados no contenían "
+                "información suficiente para responder esta pregunta con certeza. "
+                "Se muestra el mensaje de aviso.",
             "error_api":
-                "⚠️ **Paso 2 — BERT:** no se pudo conectar con la API de HuggingFace "
-                "(problema de red o límite de uso momentáneo). "
+                "⚠️ **Paso 2 — OpenAI GPT:** no se pudo conectar con la API de OpenAI "
+                "(problema de red o límite de uso). Se muestra el texto pre-escrito del dataset.",
+            "sin_clave":
+                "⚠️ **Paso 2 — OpenAI GPT:** no hay clave de API configurada. "
                 "Se muestra el texto pre-escrito del dataset.",
-            "no_aplicable":
-                f"ℹ️ **Paso 2 — BERT:** no se activó porque la similitud de la pregunta "
-                f"con el dataset fue del {confianza:.0%}, por debajo del umbral del 30%. "
-                f"Con una coincidencia tan baja, BERT podría extraer fragmentos sin relación "
-                f"con la consulta, por lo que se usa directamente el texto pre-escrito.",
         }
         with st.expander("¿Cómo se obtuvo esta respuesta?"):
             st.markdown(
@@ -230,7 +224,7 @@ with tab_asistente:
                 f"del dataset y encontró la más similar: "
                 f"_\"{pregunta_dataset}\"_"
             )
-            st.markdown(_bert_textos.get(bert_estado, ""))
+            st.markdown(_openai_textos.get(openai_estado, ""))
             st.divider()
             if confianza_display >= 0.7:
                 st.success("Coincidencia alta — la respuesta es fiable.")
@@ -344,7 +338,7 @@ with tab_conocimiento:
         nueva_pregunta  = st.text_input("Pregunta")
         nueva_respuesta = st.text_area("Respuesta corta (visible en la app)", height=80)
         nuevo_contexto  = st.text_area(
-            "Contexto completo (párrafo del que BERT extrae la respuesta)", height=120
+            "Contexto completo (contexto clínico completo (OpenAI lo usa para generar la respuesta))", height=120
         )
         enviado = st.form_submit_button("Añadir al dataset", type="primary")
 
