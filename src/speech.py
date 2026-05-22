@@ -1,14 +1,26 @@
-"""Transcripción de audio mediante SpeechRecognition + Google Speech API."""
+"""Transcripción de audio mediante Whisper large-v3 vía HuggingFace Inference API."""
 
 import io
-import speech_recognition as sr
+import os
 from pydub import AudioSegment
+from huggingface_hub import InferenceClient
+
+
+def _get_hf_token() -> str:
+    try:
+        import streamlit as st
+        val = st.secrets.get("HF_TOKEN")
+        if val:
+            return val
+    except Exception:
+        pass
+    return os.getenv("HF_TOKEN", "")
 
 
 def transcribir(audio_bytes: bytes) -> str:
     """
     Recibe los bytes de audio grabados en Streamlit y devuelve
-    el texto transcrito en español usando Google Speech Recognition.
+    el texto transcrito en español usando Whisper large-v3.
     """
     # El navegador graba en WebM; pydub lo convierte a WAV
     audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
@@ -16,8 +28,9 @@ def transcribir(audio_bytes: bytes) -> str:
     audio_segment.export(wav_buffer, format="wav")
     wav_buffer.seek(0)
 
-    recognizer = sr.Recognizer()
-    with sr.AudioFile(wav_buffer) as source:
-        audio_data = recognizer.record(source)
-
-    return recognizer.recognize_google(audio_data, language="es-ES")
+    client = InferenceClient(token=_get_hf_token())
+    resultado = client.automatic_speech_recognition(
+        wav_buffer.read(),
+        model="openai/whisper-large-v3",
+    )
+    return resultado.text
