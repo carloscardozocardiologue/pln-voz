@@ -123,4 +123,5 @@ def responder(pregunta: str) -> dict:
         "bert_estado":      bert_estado,
         "score_bert":       round(score_bert, 3),
         "pregunta_dataset": mejor_fila["pregunta"],
+        "total_entradas":   len(_df),
     }

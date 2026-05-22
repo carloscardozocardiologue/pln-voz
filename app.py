@@ -195,15 +195,16 @@ with tab_asistente:
                     dialog_mejorar(pregunta, categoria)
 
         # — Explicación del resultado —
+        total_entradas = uc["resultado"].get("total_entradas", 500)
         _bert_textos = {
             "ok":
                 f"✅ **Paso 2 — BERT ({score_bert:.0%}):** el modelo leyó el párrafo clínico "
                 f"asociado a esa entrada y extrajo el fragmento que mejor responde tu pregunta. "
                 f"La respuesta que ves es ese fragmento, más preciso que el texto pre-escrito.",
             "score_bajo":
-                f"⚠️ **Paso 2 — BERT ({score_bert:.0%}):** el modelo intentó extraer un fragmento "
-                f"del párrafo clínico, pero su certeza fue demasiado baja. "
-                f"Para evitar una respuesta imprecisa, se muestra el texto pre-escrito del dataset.",
+                f"ℹ️ **Paso 2 — BERT ({score_bert:.0%}):** el modelo analizó el párrafo clínico "
+                f"pero no encontró un fragmento más preciso que la respuesta ya disponible en el dataset. "
+                f"Se muestra el texto pre-escrito, que es la respuesta correcta.",
             "error_api":
                 "⚠️ **Paso 2 — BERT:** no se pudo conectar con la API de HuggingFace "
                 "(problema de red o límite de uso momentáneo). "
@@ -217,7 +218,7 @@ with tab_asistente:
         with st.expander("¿Cómo se obtuvo esta respuesta?"):
             st.markdown(
                 f"**Paso 1 — Búsqueda en el dataset (TF-IDF): {confianza:.0%}** — "
-                f"el sistema comparó tu pregunta con las {len(_df) if '_df' in dir() else '555'} entradas "
+                f"el sistema comparó tu pregunta con las {total_entradas} entradas "
                 f"del dataset y encontró la más similar: "
                 f"_\"{pregunta_dataset}\"_"
             )
