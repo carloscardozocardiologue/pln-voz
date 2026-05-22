@@ -41,8 +41,19 @@ def _cargar():
     return df, vec, mat
 
 
+def _get_hf_token() -> str:
+    try:
+        import streamlit as st
+        val = st.secrets.get("HF_TOKEN")
+        if val:
+            return val
+    except Exception:
+        pass
+    return os.getenv("HF_TOKEN", "")
+
+
 _df, _vectorizador, _matriz = _cargar()
-_client = InferenceClient(token=os.getenv("HF_TOKEN"))
+_client = InferenceClient(token=_get_hf_token())
 
 FALLBACK = (
     "No tengo información suficiente en mi base de conocimiento para responder "

@@ -7,13 +7,25 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _cfg(key: str, default=None):
+    """Lee primero de st.secrets (Streamlit Cloud) y luego de os.getenv (local)."""
+    try:
+        import streamlit as st
+        val = st.secrets.get(key)
+        if val is not None:
+            return val
+    except Exception:
+        pass
+    return os.getenv(key, default)
+
+
 def _conectar():
     return mysql.connector.connect(
-        host=os.getenv("DB_HOST"),
-        port=int(os.getenv("DB_PORT", 3306)),
-        user=os.getenv("DB_USER"),
-        password=os.getenv("DB_PASSWORD"),
-        database=os.getenv("DB_NAME"),
+        host=_cfg("DB_HOST"),
+        port=int(_cfg("DB_PORT", 3306)),
+        user=_cfg("DB_USER"),
+        password=_cfg("DB_PASSWORD"),
+        database=_cfg("DB_NAME"),
         connection_timeout=3,
     )
 
