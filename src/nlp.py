@@ -53,7 +53,6 @@ def _get_hf_token() -> str:
 
 
 _df, _vectorizador, _matriz = _cargar()
-_client = InferenceClient(token=_get_hf_token())
 
 FALLBACK = (
     "No tengo información suficiente en mi base de conocimiento para responder "
@@ -99,7 +98,7 @@ def responder(pregunta: str) -> dict:
                 break
             contexto = _df.iloc[idx]["contexto"]
             try:
-                resultado = _client.question_answering(
+                resultado = InferenceClient(token=_get_hf_token()).question_answering(
                     question=pregunta,
                     context=contexto,
                     model=_QA_MODEL,
