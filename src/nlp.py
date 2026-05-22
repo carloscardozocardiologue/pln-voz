@@ -73,16 +73,18 @@ FALLBACK = (
 
 _SYSTEM_PROMPT = (
     "Eres un asistente médico especializado en cardiología para uso hospitalario. "
+    "Para cada consulta recibirás una o más entradas del dataset, cada una con:\n"
+    "- 'Respuesta de referencia': respuesta corta validada por el clínico. Es la fuente principal.\n"
+    "- 'Contexto clínico': párrafo de las guías ESC que amplía la información.\n"
     "REGLAS ESTRICTAS:\n"
-    "1. Responde ÚNICAMENTE con información que aparezca explícitamente en los "
-    "contextos clínicos proporcionados.\n"
-    "2. No añadas información médica que no esté en los contextos.\n"
-    "3. Si los contextos no contienen información suficiente para responder la "
-    'pregunta, responde exactamente: "No tengo información suficiente en mi base '
-    'de conocimiento para responder esa pregunta. Por favor, reformula la consulta '
-    'o selecciona otra categoría."\n'
-    "4. Responde en español, de forma concisa y clínica.\n"
-    "5. No inventes datos, dosis ni recomendaciones que no estén en los contextos."
+    "1. Basa tu respuesta principalmente en la 'Respuesta de referencia'.\n"
+    "2. Puedes complementar con información del 'Contexto clínico' si aporta valor adicional.\n"
+    "3. No añadas información que no esté en ninguna de las dos fuentes.\n"
+    "4. Si ninguna fuente contiene información suficiente para responder la pregunta, "
+    'responde exactamente: "No tengo información suficiente en mi base de conocimiento '
+    'para responder esa pregunta. Por favor, reformula la consulta o selecciona otra categoría."\n'
+    "5. Responde en español, de forma concisa y clínica.\n"
+    "6. No inventes datos, dosis ni recomendaciones que no estén en las fuentes."
 )
 
 
@@ -106,14 +108,16 @@ def _openai_responder(pregunta: str, contextos: list) -> tuple:
         from openai import OpenAI
         client = OpenAI(api_key=key)
 
-        contexto_texto = "\n\n".join(
-            f"Contexto {i + 1}:\n{ctx['contexto']}"
+        fuentes_texto = "\n\n".join(
+            f"Entrada {i + 1}:\n"
+            f"  Respuesta de referencia: {ctx['respuesta']}\n"
+            f"  Contexto clínico: {ctx['contexto']}"
             for i, ctx in enumerate(contextos)
         )
         user_message = (
             f"Pregunta del médico: {pregunta}\n\n"
-            f"Contextos clínicos disponibles:\n{contexto_texto}\n\n"
-            "Responde basándote ÚNICAMENTE en los contextos proporcionados."
+            f"Fuentes disponibles:\n{fuentes_texto}\n\n"
+            "Responde basándote en las fuentes proporcionadas."
         )
 
         response = client.chat.completions.create(
@@ -177,7 +181,10 @@ def responder(pregunta: str) -> dict:
 
     # — Etapa 2: OpenAI RAG —
     contextos = [
-        {"contexto": _df.iloc[idx]["contexto"]}
+        {
+            "respuesta": _df.iloc[idx]["respuesta"],
+            "contexto":  _df.iloc[idx]["contexto"],
+        }
         for idx in top_indices
         if sim_activa[idx] >= _TFIDF_UMBRAL
     ]
