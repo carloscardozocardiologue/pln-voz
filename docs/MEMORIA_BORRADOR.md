@@ -176,26 +176,27 @@ IDF(t)   = log( N / df(t) )
 
 BERT (*Bidirectional Encoder Representations from Transformers*) es un modelo de lenguaje basado en la arquitectura Transformer (Devlin et al., 2019). La variante utilizada está ajustada específicamente para la tarea de *Question Answering* en español, entrenada sobre el dataset SQuAD2 traducido al español (Rajpurkar et al., 2018).
 
+**BERT QA es un modelo extractivo, no generativo.** A diferencia de modelos como GPT o Claude, BERT no redacta una respuesta nueva — localiza el fragmento textual del `contexto` que mejor responde la pregunta y lo devuelve literalmente. Esto es una garantía de seguridad explícita en un entorno clínico: el sistema nunca puede inventar información, ya que solo puede citar fragmentos pre-aprobados de las guías ESC.
+
 **Flujo de la etapa 2b:**
 1. Se toman las 2 entradas del dataset con mayor similitud TF-IDF (TOP_K = 2)
 2. Para cada una, se envía al modelo BERT la pregunta + el campo `contexto` (párrafo clínico extendido)
-3. BERT extrae el fragmento del contexto que mejor responde la pregunta y devuelve un score de confianza
-4. Si el score BERT ≥ 0.15, se usa el fragmento extraído por BERT (más preciso que el texto pre-escrito)
-5. Si el score BERT < 0.15, se devuelve la respuesta pre-escrita del dataset
+3. BERT extrae el fragmento del contexto que mejor responde la pregunta y devuelve un score de confianza (0–1)
+4. **BERT sustituye la respuesta pre-escrita solo si su score supera al score TF-IDF.** Si el retrieval es de alta confianza (ej. coincidencia exacta, TF-IDF = 100%), la respuesta pre-escrita del dataset — más completa que cualquier fragmento extraído — siempre gana
+5. Si el score BERT < 0.15 (umbral mínimo), se descarta directamente y se usa la respuesta pre-escrita
 
 ```python
-# src/nlp.py — extracto del flujo BERT
-resultado = _client.question_answering(
+# src/nlp.py — lógica de arbitraje BERT vs. TF-IDF
+resultado = InferenceClient(token=_get_hf_token()).question_answering(
     question=pregunta,
     context=contexto,
     model="mrm8488/bert-base-spanish-wwm-cased-finetuned-spa-squad2-es",
 )
-if resultado.score > score_bert:
-    score_bert     = resultado.score
-    respuesta_bert = resultado.answer
+# BERT solo gana si su score supera la confianza del retrieval
+bert_usado = bert_estado == "ok" and score_bert > confianza_tfidf
 ```
 
-**Ventaja de este enfoque híbrido:** TF-IDF selecciona el contexto relevante con bajo coste computacional; BERT extrae la respuesta exacta dentro de ese contexto con alta precisión. Este patrón se denomina *Retrieval-Augmented Generation* (RAG) en su forma más simple.
+**Ventaja de este enfoque híbrido:** TF-IDF selecciona el contexto relevante con bajo coste computacional; BERT aporta valor en escenarios de coincidencia parcial, extrayendo el fragmento más pertinente cuando el retrieval no es determinístico. Este patrón se denomina *Retrieval-Augmented QA* en la literatura (Lewis et al., 2020).
 
 ### 2.4 Capa 3 — Persistencia en MySQL
 
@@ -446,13 +447,25 @@ Este enfoque, conocido como *k-Nearest Neighbor text classification* o *non-para
 - Respuesta en < 2 segundos para consultas con terminología estándar ESC
 - El sistema identifica correctamente preguntas sobre síntomas del IAM, dosis de anticoagulantes y protocolos RCP con confianza alta
 - La explicación paso a paso ("¿Cómo se obtuvo esta respuesta?") permite al clínico calibrar la fiabilidad de la respuesta
-- El índice TF-IDF construido sobre `pregunta + contexto` permite recuperar entradas relevantes incluso cuando el vocabulario del médico difiere del dataset (ej. "hypoperfusion" → "hipoperfusión")
+- El sistema de doble índice TF-IDF (pregunta sola + pregunta+contexto) permite recuperar entradas relevantes incluso cuando el vocabulario del médico difiere del dataset (ej. "hypoperfusion" → "hipoperfusión") sin penalizar las coincidencias exactas
 - El mecanismo de correcciones fonéticas resuelve errores sistemáticos del ASR con fármacos cardiológicos (dabigatrán, rivaroxabán, amiodarona)
-- Cuando BERT supera el umbral de confianza, la barra muestra su score directamente, ofreciendo una indicación más precisa de la calidad de la respuesta
+- La lógica de arbitraje (BERT gana solo si su score > TF-IDF) garantiza que la respuesta pre-escrita —siempre más completa— no sea desplazada por un fragmento BERT de baja confianza
+- Con coincidencia exacta de pregunta del dataset, el sistema alcanza TF-IDF = 100% y muestra siempre la respuesta completa del experto
+
+**Hallazgo clave sobre BERT QA — extractivo vs. generativo:**
+
+Durante las pruebas se observó que el modelo BERT QA extrae fragmentos textuales del contexto, pero no genera respuestas nuevas ni enriquece el contenido. Cuando la respuesta pre-escrita del dataset es completa (coincidencia alta, TF-IDF ≥ 70%), el fragmento BERT resulta frecuentemente más corto e incompleto. BERT aporta valor real en el rango TF-IDF 30–60%, donde el retrieval es aproximado: en esos casos BERT puede localizar el fragmento más pertinente del contexto clínico con mayor confianza que el score de retrieval, y la lógica de arbitraje lo selecciona correctamente.
+
+| Escenario | TF-IDF | BERT | Respuesta final |
+|---|---|---|---|
+| Pregunta idéntica al dataset | ~100% | ~44% | Pre-escrita (TF-IDF gana) ✅ |
+| Pregunta clínica descriptiva | ~32% | ~61% | Fragmento BERT (BERT gana) ✅ |
+| Pregunta fuera del dataset | < 15% | — | Fallback ✅ |
 
 **Limitaciones identificadas:**
-- **BERT QA con descripciones clínicas:** el modelo mostró limitaciones con consultas formuladas como descripciones clínicas en lugar de preguntas directas (típico del dictado por voz: "paciente con hipotensión e hipoperfusión"). BERT fue entrenado con preguntas SQuAD de formato interrogativo, por lo que su score de extracción es consistentemente bajo para este tipo de entrada. El pipeline TF-IDF demostró ser el componente más robusto, recuperando la entrada correcta incluso con vocabulario parcialmente diferente.
-- **TF-IDF y sinónimos:** TF-IDF no captura similitud semántica. Una pregunta formulada con siglas (IAM ≠ "infarto agudo de miocardio") obtiene baja confianza aunque el sistema conozca el concepto. Se mitiga parcialmente con el índice construido sobre pregunta + contexto.
+- **BERT QA con descripciones clínicas:** el modelo mostró limitaciones con consultas formuladas como descripciones clínicas en lugar de preguntas directas (típico del dictado por voz: "paciente con hipotensión e hipoperfusión"). BERT fue entrenado con preguntas SQuAD de formato interrogativo, por lo que su score de extracción es consistentemente bajo para este tipo de entrada. El pipeline TF-IDF demostró ser el componente más robusto en estos casos.
+- **BERT no genera respuestas nuevas:** al ser un modelo extractivo, no puede sintetizar información de múltiples entradas del dataset ni elaborar una respuesta más completa que la pre-escrita. Para ello sería necesario un modelo generativo (GPT, Llama), que sin embargo introduce el riesgo de alucinación clínica.
+- **TF-IDF y sinónimos:** TF-IDF no captura similitud semántica. Una pregunta formulada con siglas (IAM ≠ "infarto agudo de miocardio") obtiene baja confianza aunque el sistema conozca el concepto. Se mitiga parcialmente con el índice de contexto como fallback.
 - **ASR y terminología infrecuente:** Google Speech Recognition falla con términos médicos muy específicos no incluidos en el diccionario de correcciones (ej. "torsade de pointes", "takotsubo"). Se documentan y corrigen incrementalmente.
 - El sistema no distingue preguntas sobre pacientes concretos de preguntas sobre conocimiento general.
 
@@ -468,9 +481,18 @@ El sistema implementado demuestra la viabilidad técnica de integrar reconocimie
 3. **Mejora continua sin reentrenamiento:** el mecanismo de adición de entradas al dataset permite refinar el sistema en tiempo real sin infraestructura GPU
 4. **Interfaz adaptada al flujo clínico:** la grabación desde el navegador sin instalación de software, la indicación visual de confianza y el historial persistente son características diseñadas para el contexto hospitalario real
 
+**Conclusiones derivadas de las pruebas:**
+
+Las pruebas realizadas revelaron una distinción fundamental que debe tenerse en cuenta al diseñar sistemas QA clínicos: **BERT QA es un modelo extractivo, no generativo**. No elabora una respuesta nueva a partir del conocimiento acumulado — extrae literalmente un fragmento del párrafo de contexto. Esto implica que, cuando el dataset contiene respuestas pre-escritas completas y de calidad, el fragmento BERT resulta frecuentemente más corto e incompleto.
+
+La solución adoptada — un criterio de arbitraje en el que BERT solo desplaza a la respuesta pre-escrita si su score supera al score TF-IDF — resultó ser la lógica correcta: a mayor confianza del retrieval, más completa y fiable es la respuesta pre-escrita del experto. BERT aporta valor real en la zona de incertidumbre (TF-IDF 30–60%), actuando como un mecanismo de refinamiento sobre contextos aproximados.
+
+Este hallazgo tiene implicaciones directas para el diseño de sistemas de apoyo clínico: la elección entre modelos extractivos y generativos no es solo técnica, sino también de seguridad. Un modelo generativo podría producir respuestas más fluidas y completas, pero introduce el riesgo de alucinación — particularmente peligroso en un entorno donde el médico puede actuar sobre la información recibida.
+
 **Líneas de trabajo futuro:**
 - Sustituir Google Speech Recognition por Whisper local (Radford et al., 2023) para independencia de red y mayor precisión en vocabulario médico
 - Implementar embeddings semánticos (SBERT, Reimers & Gurevych, 2019) como alternativa o complemento a TF-IDF para capturar similitud semántica más allá del vocabulario literal
+- Explorar modelos generativos con RAG estricto (respuesta anclada a fuentes verificadas) para obtener respuestas más completas sin sacrificar la trazabilidad clínica
 - Ampliar el dataset a especialidades cardíacas adicionales (electrofisiología, imagen cardíaca)
 - Evaluar el sistema con usuarios reales en un entorno hospitalario controlado
 
