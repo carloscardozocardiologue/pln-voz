@@ -96,23 +96,28 @@ tab_asistente, tab_historial, tab_stats, tab_conocimiento = st.tabs([
 # PESTAÑA 1 — ASISTENTE
 # ═══════════════════════════════════════════════════════════════════
 with tab_asistente:
-    audio = st.audio_input("Pulsa el micrófono, habla y pulsa detener")
+    _k = st.session_state.get("input_key", 0)
+    audio = st.audio_input("Pulsa el micrófono, habla y pulsa detener", key=f"audio_{_k}")
 
     st.write("— o escribe tu consulta —")
     texto_escrito = st.text_input(
         "Consulta escrita",
         placeholder="¿Cuáles son los síntomas del infarto?",
         label_visibility="collapsed",
+        key=f"texto_{_k}",
     )
     col_btn, col_nueva = st.columns(2)
     consultar = col_btn.button("Consultar", use_container_width=True, type="primary")
     if col_nueva.button("Nueva consulta", use_container_width=True, type="secondary"):
         st.session_state["ultima_consulta"] = None
+        st.session_state["input_key"] = _k + 1
         st.rerun()
 
     # Inicializar estado persistente entre reruns
     if "ultima_consulta" not in st.session_state:
         st.session_state["ultima_consulta"] = None
+    if "input_key" not in st.session_state:
+        st.session_state["input_key"] = 0
 
     # Determinar fuente de la consulta
     transcripcion = None
