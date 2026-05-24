@@ -21,6 +21,7 @@ def _cfg(key: str, default=None):
 
 
 def _conectar():
+    """Abre y devuelve una conexión MySQL usando las credenciales del entorno."""
     return mysql.connector.connect(
         host=_cfg("DB_HOST"),
         port=int(_cfg("DB_PORT", 3306)),
@@ -33,6 +34,7 @@ def _conectar():
 
 def guardar(categoria: str, transcripcion: str, respuesta: str,
             confianza: float = None, duracion_ms: int = None):
+    """Inserta una consulta completa en la tabla 'consultas' de MySQL."""
     conn = _conectar()
     cursor = conn.cursor()
     cursor.execute(
@@ -46,6 +48,7 @@ def guardar(categoria: str, transcripcion: str, respuesta: str,
 
 
 def borrar_historial():
+    """Elimina todas las filas de la tabla 'consultas' (acción irreversible)."""
     conn = _conectar()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM consultas")
@@ -55,6 +58,7 @@ def borrar_historial():
 
 
 def obtener_estadisticas() -> dict:
+    """Devuelve métricas globales y por categoría: total, confianza media, baja confianza y tiempo medio."""
     conn = _conectar()
     cursor = conn.cursor(dictionary=True)
 
@@ -86,6 +90,7 @@ def obtener_estadisticas() -> dict:
 
 
 def obtener_baja_confianza(umbral: float = 0.40, limite: int = 10) -> list[dict]:
+    """Devuelve las consultas con confianza TF-IDF por debajo del umbral, ordenadas de menor a mayor."""
     conn = _conectar()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
@@ -105,6 +110,7 @@ def obtener_baja_confianza(umbral: float = 0.40, limite: int = 10) -> list[dict]
 
 
 def obtener_historial(limite: int = 20) -> list[dict]:
+    """Devuelve las últimas N consultas ordenadas por fecha descendente."""
     conn = _conectar()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(

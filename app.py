@@ -64,6 +64,7 @@ st.divider()
 # está dentro de un bloque `with tab_X:` falla cuando se llama desde otra pestaña
 @st.dialog("Añadir al dataset de conocimiento")
 def dialog_mejorar(pregunta: str, cat: str):
+    """Muestra un formulario modal para añadir una nueva entrada al dataset cuando la confianza es baja."""
     st.markdown("**Pregunta detectada con baja confianza:**")
     st.info(pregunta)
     nueva_respuesta = st.text_area("Respuesta corta (visible en la app)", height=80)

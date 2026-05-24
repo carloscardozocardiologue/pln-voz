@@ -38,6 +38,7 @@ def _normalizar(texto: str) -> str:
 
 
 def _cargar():
+    """Lee el dataset CSV y construye las dos matrices TF-IDF al arrancar la aplicación."""
     df = pd.read_csv(_DATA_PATH)
 
     # Matriz 1: solo pregunta — alta similitud para preguntas exactas o casi exactas
@@ -54,6 +55,7 @@ def _cargar():
 
 
 def _get_openai_key() -> str:
+    """Obtiene la clave de OpenAI desde st.secrets (Streamlit Cloud) o desde .env (local)."""
     try:
         import streamlit as st
         val = st.secrets.get("OPENAI_API_KEY")

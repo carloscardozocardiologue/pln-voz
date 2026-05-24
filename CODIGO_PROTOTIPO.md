@@ -245,6 +245,7 @@ def _normalizar(texto: str) -> str:
 
 
 def _cargar():
+    """Lee el dataset CSV y construye las dos matrices TF-IDF al arrancar la aplicación."""
     df = pd.read_csv(_DATA_PATH)
 
     # Matriz 1: solo pregunta — alta similitud para preguntas exactas o casi exactas
@@ -261,6 +262,7 @@ def _cargar():
 
 
 def _get_openai_key() -> str:
+    """Obtiene la clave de OpenAI desde st.secrets (Streamlit Cloud) o desde .env (local)."""
     try:
         import streamlit as st
         val = st.secrets.get("OPENAI_API_KEY")
@@ -452,6 +454,7 @@ def _cfg(key: str, default=None):
 
 
 def _conectar():
+    """Abre y devuelve una conexión MySQL usando las credenciales del entorno."""
     return mysql.connector.connect(
         host=_cfg("DB_HOST"),
         port=int(_cfg("DB_PORT", 3306)),
@@ -464,6 +467,7 @@ def _conectar():
 
 def guardar(categoria: str, transcripcion: str, respuesta: str,
             confianza: float = None, duracion_ms: int = None):
+    """Inserta una consulta completa en la tabla 'consultas' de MySQL."""
     conn = _conectar()
     cursor = conn.cursor()
     cursor.execute(
@@ -477,6 +481,7 @@ def guardar(categoria: str, transcripcion: str, respuesta: str,
 
 
 def borrar_historial():
+    """Elimina todas las filas de la tabla 'consultas' (acción irreversible)."""
     conn = _conectar()
     cursor = conn.cursor()
     cursor.execute("DELETE FROM consultas")
@@ -486,6 +491,7 @@ def borrar_historial():
 
 
 def obtener_estadisticas() -> dict:
+    """Devuelve métricas globales y por categoría: total, confianza media, baja confianza y tiempo medio."""
     conn = _conectar()
     cursor = conn.cursor(dictionary=True)
 
@@ -517,6 +523,7 @@ def obtener_estadisticas() -> dict:
 
 
 def obtener_baja_confianza(umbral: float = 0.40, limite: int = 10) -> list[dict]:
+    """Devuelve las consultas con confianza TF-IDF por debajo del umbral, ordenadas de menor a mayor."""
     conn = _conectar()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
@@ -536,6 +543,7 @@ def obtener_baja_confianza(umbral: float = 0.40, limite: int = 10) -> list[dict]
 
 
 def obtener_historial(limite: int = 20) -> list[dict]:
+    """Devuelve las últimas N consultas ordenadas por fecha descendente."""
     conn = _conectar()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
@@ -621,6 +629,7 @@ st.divider()
 # está dentro de un bloque `with tab_X:` falla cuando se llama desde otra pestaña
 @st.dialog("Añadir al dataset de conocimiento")
 def dialog_mejorar(pregunta: str, cat: str):
+    """Muestra un formulario modal para añadir una nueva entrada al dataset cuando la confianza es baja."""
     st.markdown("**Pregunta detectada con baja confianza:**")
     st.info(pregunta)
     nueva_respuesta = st.text_area("Respuesta corta (visible en la app)", height=80)
