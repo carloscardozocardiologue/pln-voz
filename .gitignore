@@ -26,3 +26,10 @@ build/
 # Datos sensibles
 *.pem
 *.key
+
+# Archivos y directorios locales — no necesarios en el repositorio remoto
+CLAUDE.md
+trash/
+docs/
+notebooks/
+claude_kit/

@@ -22,6 +22,8 @@ _LOGO_PATH = Path(__file__).parent / "assets" / "UE_Madrid_Logo_Positive_RGB.png
 _LOGO_B64  = (
     base64.b64encode(_LOGO_PATH.read_bytes()).decode()
     if _LOGO_PATH.exists() else None
+    # Codificación base64 para incrustar la imagen directamente en HTML
+    # sin depender de rutas de archivo en Streamlit Cloud
 )
 
 # ── Configuración de página ───────────────────────────────────────────────────
@@ -58,6 +60,8 @@ st.warning(
 st.divider()
 
 # ── Dialog (debe definirse fuera de las pestañas) ─────────────────────────────
+# Streamlit renderiza el código de arriba a abajo; si el decorator @st.dialog
+# está dentro de un bloque `with tab_X:` falla cuando se llama desde otra pestaña
 @st.dialog("Añadir al dataset de conocimiento")
 def dialog_mejorar(pregunta: str, cat: str):
     st.markdown("**Pregunta detectada con baja confianza:**")
@@ -110,6 +114,8 @@ with tab_asistente:
 
     if st.button("Nueva consulta", use_container_width=True, type="secondary"):
         st.session_state["ultima_consulta"] = None
+        # Incrementar la key fuerza a Streamlit a destruir y recrear el widget de audio,
+        # lo que equivale a "vaciar" el micrófono sin necesidad de recargar la página
         st.session_state["input_key"] = _k + 1
         st.rerun()
 

@@ -9,6 +9,7 @@ load_dotenv()
 
 def _cfg(key: str, default=None):
     """Lee primero de st.secrets (Streamlit Cloud) y luego de os.getenv (local)."""
+    # Prioridad: st.secrets (producción en Streamlit Cloud) → .env (entorno local)
     try:
         import streamlit as st
         val = st.secrets.get(key)
@@ -26,7 +27,7 @@ def _conectar():
         user=_cfg("DB_USER"),
         password=_cfg("DB_PASSWORD"),
         database=_cfg("DB_NAME"),
-        connection_timeout=3,
+        connection_timeout=3,   # 3 s máximo para no bloquear la UI si Railway no responde
     )
 
 

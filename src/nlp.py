@@ -127,7 +127,7 @@ def _openai_responder(pregunta: str, contextos: list) -> tuple:
                 {"role": "user",   "content": user_message},
             ],
             max_tokens=300,
-            temperature=0.1,
+            temperature=0.1,   # temperatura baja = respuestas deterministas, sin alucinaciones
         )
 
         respuesta = response.choices[0].message.content.strip()

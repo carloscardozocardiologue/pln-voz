@@ -89,7 +89,8 @@ _CORRECCIONES = {
 def _corregir(texto: str) -> str:
     """Aplica el diccionario de correcciones fonéticas al texto transcrito."""
     t = texto.lower()
-    # Ordenamos por longitud descendente para que las frases largas tengan prioridad
+    # Orden por longitud descendente: "fibrilación auricular" debe coincidir
+    # antes que "fibrilación" para que la frase completa tenga prioridad
     for erroneo, correcto in sorted(_CORRECCIONES.items(), key=lambda x: -len(x[0])):
         t = t.replace(erroneo, correcto)
     return t[0].upper() + t[1:] if t else t
@@ -100,7 +101,7 @@ def transcribir(audio_bytes: bytes) -> str:
     Recibe los bytes de audio grabados en Streamlit y devuelve
     el texto transcrito en español usando Google Speech Recognition.
     """
-    # El navegador graba en WebM; pydub lo convierte a WAV
+    # El navegador solo puede grabar en WebM/Opus; Google SR exige WAV
     audio_segment = AudioSegment.from_file(io.BytesIO(audio_bytes))
     wav_buffer = io.BytesIO()
     audio_segment.export(wav_buffer, format="wav")
@@ -110,5 +111,6 @@ def transcribir(audio_bytes: bytes) -> str:
     with sr.AudioFile(wav_buffer) as source:
         audio_data = recognizer.record(source)
 
+    # language="es-ES" reduce errores en términos médicos castellanos
     texto = recognizer.recognize_google(audio_data, language="es-ES")
     return _corregir(texto)
